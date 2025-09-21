@@ -1,0 +1,10 @@
+.env
+token.json
+.dockerignore
+.git
+.github
+Dockerfile
+docker-compose.yaml
+README.md
+LICENSE.md
+
