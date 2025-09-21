@@ -1,17 +1,14 @@
 import os
-import pickle
 import requests
 from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 import json
 import logging
 from datetime import datetime, timedelta
 from email.utils import parsedate_to_datetime
 from ratelimit import limits, sleep_and_retry
 from filelock import FileLock
-from tenacity import retry, stop_after_attempt, wait_exponential
 from dotenv import load_dotenv
 import sys
 import time
@@ -59,7 +56,7 @@ def send_to_discord(webhook_url, payload):
 def format_datetime(date_str):
     try:
         dt = parsedate_to_datetime(date_str)
-        return dt.strftime("%d %B %Y - %H:%M")  # Day Month Year - Hour:Minute
+        return dt.strftime("%d %B %Y - %H:%M")  
     except Exception:
         return date_str
 
@@ -257,13 +254,6 @@ def ensure_single_instance():
         logger.error("Another instance is already running")
         sys.exit(1)
 
-def format_datetime(date_str):
-    try:
-        dt = parsedate_to_datetime(date_str)
-        return dt.strftime("%d %B %Y - %H:%M")
-    except Exception:
-        return date_str
-
 def get_last_processed_ids():
     try:
         with open(LAST_PROCESSED_FILE, 'r') as f:
@@ -290,24 +280,31 @@ def process_messages(service, query, last_id, message_type):
         ).execute()
 
         messages = results.get('messages', [])
-
         if not messages:
-            logger.info(f'No new {message_type} messages found.')
-            return None
+            logger.info(f'No {message_type} messages found.')
+            return last_id
 
+        # Gmail returns newest-first
         newest_message_id = messages[0]['id']
 
-        new_messages = []
         if last_id:
+            #collect only messages newer than last_id
+            new_messages = []
             for message in messages:
                 if message['id'] == last_id:
                     break
-                if not message_cache.is_processed(message['id']):
-                    new_messages.append(message)
+                new_messages.append(message)
+            # Reverse so they’re sent oldest → newest
+            new_messages = list(reversed(new_messages))
         else:
-            new_messages = messages[:1]
+            #First run, only send the newest message
+            new_messages = [messages[0]]
 
-        for message in reversed(new_messages):
+        if not new_messages:
+            logger.info(f"No new {message_type} messages to process.")
+            return last_id or newest_message_id
+
+        for message in new_messages:
             try:
                 msg = service.users().messages().get(
                     userId='me',
@@ -321,48 +318,24 @@ def process_messages(service, query, last_id, message_type):
                 recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
                 date = next((h['value'] for h in headers if h['name'].lower() == 'date'), 'No Date')
 
-                # Create and send Discord message
                 discord_payload = create_discord_message(
                     message_type, subject, sender, recipient, date
                 )
 
                 if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
-                    message_cache.mark_processed(message['id'])
-                    logger.info(f"Successfully processed {message_type} message {message['id']}")
+                    logger.info(f"Sent {message_type} message {message['id']} to Discord")
                 else:
-                    logger.error(f"Failed to send {message_type} message {message['id']} to Discord.")
+                    logger.warning(f"Failed to send {message_type} message {message['id']} (rate limited?)")
 
             except Exception as e:
                 logger.error(f"Error processing message {message['id']}: {str(e)}")
-                # Send error to Discord, but prevent recursion
-                try:
-                    monitor = getattr(process_messages, '_monitor', None)
-                    if monitor:
-                        monitor.send_error({
-                            'timestamp': datetime.now().isoformat(),
-                            'error': str(e),
-                            'type': type(e).__name__
-                        }, _is_internal_error=True)
-                except Exception:
-                    pass
                 continue
 
         return newest_message_id
 
     except Exception as e:
-        logger.error(f"An error occurred processing {message_type} messages: {str(e)}")
-        # Send error to Discord, but prevent recursion
-        try:
-            monitor = getattr(process_messages, '_monitor', None)
-            if monitor:
-                monitor.send_error({
-                    'timestamp': datetime.now().isoformat(),
-                    'error': str(e),
-                    'type': type(e).__name__
-                }, _is_internal_error=True)
-        except Exception:
-            pass
-        return None
+        logger.error(f"Error processing {message_type} messages: {str(e)}")
+        return last_id
 
 def main():
     # Attach monitor to process_messages for error reporting
