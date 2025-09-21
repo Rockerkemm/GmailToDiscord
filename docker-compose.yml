@@ -1,0 +1,11 @@
+services:
+  gmailtodiscord:
+    container_name: gmail-notifier
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DISCORD_WEBHOOK_URL=
+      DISCORD_MONITOR_WEBHOOK_URL=
+    volumes:
+      - ./token.json:/GMAILTODISCORD/token.json

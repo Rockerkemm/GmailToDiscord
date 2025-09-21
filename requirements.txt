@@ -1,0 +1,7 @@
+google-api-python-client 
+requests
+ratelimit
+filelock
+tenacity
+python-dotenv
+google-auth-oauthlib
