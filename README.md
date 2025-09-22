@@ -30,16 +30,19 @@ This project forwards emails from a Gmail account to a Discord channel using a w
 
 For more details, see the [Gmail API Python Quickstart](https://developers.google.com/gmail/api/quickstart/python).
 
+
 ### 1. Clone the repository
 ```sh
 git clone https://github.com/Rockerkemm/GmailToDiscord.git
 cd GmailToDiscord
 ```
 
+
 ### 2. Install dependencies
 ```sh
 pip install -r requirements.txt
 ```
+
 
 ### 3. Obtain `token.json` for Gmail API
 Refer to the section above on "How to Obtain `token.json`" using the official Gmail API Python Quickstart. You must generate `token.json` separately and place it in your project root before running this program.
@@ -53,6 +56,7 @@ Refer to the section above on "How to Obtain `token.json`" using the official Gm
 
 For more info, see [Discord Webhooks Guide](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).
 
+
 ### 5. Configure environment variables
 Create a `.env` file in the project root with the following variables:
 ```
@@ -65,6 +69,7 @@ DISCORD_MONITOR_WEBHOOK_URL=<your monitor Discord webhook URL>
 - Open the channel settings where you want to receive emails or monitor events
 - Go to **Integrations > Webhooks**
 - Create a new webhook for each channel and copy the URLs
+
 
 ### 6. Run the application
 #### Locally
@@ -93,3 +98,4 @@ MIT
 ## Resources
 - [Gmail API Quickstart](https://developers.google.com/gmail/api/quickstart/python)
 - [Discord Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+
