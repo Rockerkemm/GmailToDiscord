@@ -16,7 +16,7 @@ This project forwards emails from a Gmail account to a Discord channel using a w
 1. Go to the [Gmail API Python Quickstart](https://developers.google.com/gmail/api/quickstart/python).
 2. Follow the instructions to enable the Gmail API and create OAuth client credentials.
 3. Download the `credentials.json` file from Google Cloud Console.
-4. Download the official quickstart script from the Quickstart page (usually named `quickstart.py`).
+4. Download the quickstart script from the  page.
 5. Place `credentials.json` and `quickstart.py` in the same folder on your local machine.
 6. Run the quickstart script:
 	```sh
@@ -98,4 +98,5 @@ MIT
 ## Resources
 - [Gmail API Quickstart](https://developers.google.com/gmail/api/quickstart/python)
 - [Discord Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+
 
