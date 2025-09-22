@@ -78,7 +78,7 @@ docker build -t gmail-to-discord .
 
 To run with Docker Compose, use the provided `docker-compose.yml` from the repository:
 ```sh
-docker-compose up
+docker compose up
 ```
 
 This will automatically use the correct environment variables and mount your `token.json` file as configured in the repository.
@@ -89,6 +89,7 @@ MIT
 ## Resources
 - [Gmail API Quickstart](https://developers.google.com/gmail/api/quickstart/python)
 - [Discord Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+
 
 
 
