@@ -48,16 +48,7 @@ pip install -r requirements.txt
 Refer to the section above on "How to Obtain `token.json`" using the official Gmail API Python Quickstart. You must generate `token.json` separately and place it in your project root before running this program.
 
 
-### 4. Get your Discord webhook URL
-- Go to your Discord server
-- Open the channel settings where you want to receive emails
-- Go to **Integrations > Webhooks**
-- Create a new webhook and copy the URL
-
-For more info, see [Discord Webhooks Guide](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).
-
-
-### 5. Configure environment variables
+### 4. Configure environment variables
 Create a `.env` file in the project root with the following variables:
 ```
 DISCORD_WEBHOOK_URL=<your main Discord webhook URL>
@@ -69,9 +60,9 @@ DISCORD_MONITOR_WEBHOOK_URL=<your monitor Discord webhook URL>
 - Open the channel settings where you want to receive emails or monitor events
 - Go to **Integrations > Webhooks**
 - Create a new webhook for each channel and copy the URLs
+For more info, see [Discord Webhooks Guide](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).
 
-
-### 6. Run the application
+### 5. Run the application
 #### Locally
 ```sh
 python gmail_webhook.py
@@ -98,5 +89,6 @@ MIT
 ## Resources
 - [Gmail API Quickstart](https://developers.google.com/gmail/api/quickstart/python)
 - [Discord Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
+
 
 
