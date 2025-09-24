@@ -1,5 +1,5 @@
 # Use an official Python runtime as a base image
-FROM python:3.11.2
+FROM python:3.11.2-slim
 
 # Set the working directory inside the container
 WORKDIR /GMAILTODISCORD
@@ -9,6 +9,9 @@ COPY . /GMAILTODISCORD
 
 # Install the dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Clean up requirements file after installation
+RUN rm requirements.txt
 
 # Command to run the application
 CMD ["python", "gmail_webhook.py"]
