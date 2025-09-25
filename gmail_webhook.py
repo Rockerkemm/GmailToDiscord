@@ -53,31 +53,24 @@ def send_to_discord(webhook_url, payload):
         return False
     return True
 
-def format_datetime(date_str):
-    try:
-        dt = parsedate_to_datetime(date_str)
-        return dt.strftime("%d %B %Y - %H:%M")  
-    except Exception:
-        return date_str
 
 def create_discord_message(message_type, subject, sender, recipient, date):
     format_config = DISCORD_FORMATTING[message_type]
     def format_email(email):
         email = email.split(',')[0].strip()
         return email
-    
+
     if message_type == 'incoming':
         main_contact = format_email(sender)
         direction = "**From: **"
         title = f"📬 **New Email Received**"
-    
     else:
         main_contact = format_email(recipient)
         direction = "**To: **"
         title = f"✈️ **New Email Sent**"
-        
+
     subject_text = subject if subject else ""
-    formatted_date = format_datetime(date)
+    # 'date' is already formatted before being passed in
     description = (
         f"{direction}"
         f"{main_contact}\n"
@@ -86,7 +79,7 @@ def create_discord_message(message_type, subject, sender, recipient, date):
         f"{subject_text}\n"
 
         f"**Time: **"
-        f"{formatted_date}"
+        f"{date}"
     )
     return {
         "username": format_config['username'],
@@ -316,7 +309,13 @@ def process_messages(service, query, last_id, message_type):
                 subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
                 sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
                 recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
-                date = next((h['value'] for h in headers if h['name'].lower() == 'date'), 'No Date')
+                # Exception for BCC'ed emails
+                if recipient.strip().lower() == "undisclosed-recipients:;" or recipient.strip() == "":
+                    recipient = "[Not Able To Show BCC Recipients]"
+                # Use Gmail's internalDate for received time
+                internal_ts = int(msg.get('internalDate', 0)) / 1000
+                received_dt = datetime.fromtimestamp(internal_ts)
+                date = received_dt.strftime("%d/%m/%Y %H:%M")
 
                 discord_payload = create_discord_message(
                     message_type, subject, sender, recipient, date
