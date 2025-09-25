@@ -12,14 +12,6 @@ def save_last_processed_id(last_id):
     with open(LAST_PROCESSED_FILE, 'w') as f:
         json.dump({'last_id': last_id}, f)
 
-def save_last_processed_ids(incoming_id=None, outgoing_id=None):
-    current_ids = get_last_processed_id()
-    if incoming_id:
-        current_ids['incoming'] = incoming_id
-    if outgoing_id:
-        current_ids['outgoing'] = outgoing_id
-    with open(LAST_PROCESSED_FILE, 'w') as f:
-        json.dump(current_ids, f)
 
 
 def process_messages(service, query, last_id):
@@ -65,7 +57,12 @@ def process_messages(service, query, last_id):
                 internal_ts = int(msg.get('internalDate', 0)) / 1000
                 received_dt = datetime.fromtimestamp(internal_ts)
                 date = received_dt.strftime("%d/%m/%Y %H:%M")
+                # Determine type: outgoing if sender is 'me', else incoming
+                # Use 'me' as the authenticated user
+                user_email = 'me'
+                message_type = 'outgoing' if sender.strip().lower() == user_email else 'incoming'
                 processed.append({
+                    'type': message_type,
                     'subject': subject,
                     'sender': sender,
                     'recipient': recipient,
