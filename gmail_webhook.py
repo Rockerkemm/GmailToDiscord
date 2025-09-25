@@ -167,6 +167,13 @@ def send_to_discord(webhook_url, payload, max_retries=3):
 
 
 def create_discord_message(message_type, subject, sender, recipient, date):
+    if message_type not in DISCORD_FORMATTING:
+        debug_info = (
+            f"Invalid message_type: '{message_type}'. Must be 'incoming' or 'outgoing'.\n"
+            f"Full email data: subject='{subject}', sender='{sender}', recipient='{recipient}', date='{date}'"
+        )
+        logger.error(debug_info)
+        raise KeyError(debug_info)
     format_config = DISCORD_FORMATTING[message_type]
     def format_email(email):
         email = email.split(',')[0].strip()
