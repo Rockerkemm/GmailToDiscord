@@ -328,8 +328,12 @@ def process_messages(service, query, last_id, message_type):
                 sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
                 recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
                 # Exception for BCC'ed emails
-                if recipient.strip().lower() == "undisclosed-recipients:;" or recipient.strip() == "":
-                    recipient = "[Not Able To Show BCC Recipients]"
+                bcc_patterns = [
+                    "undisclosed-recipients:;",
+                ]
+                normalized_recipient = recipient.strip().lower().replace(" ", "")
+                if normalized_recipient in bcc_patterns or recipient.strip() == "":
+                    recipient = "[BCC recipients not visible after sending]"
                 # Use Gmail's internalDate for received time
                 internal_ts = int(msg.get('internalDate', 0)) / 1000
                 received_dt = datetime.fromtimestamp(internal_ts)
@@ -354,7 +358,7 @@ def process_messages(service, query, last_id, message_type):
         logger.error(f"Error processing {message_type} messages: {str(e)}")
         return last_id
 
-def get_combined_messages(service, last_id):
+def get_combined_messages(service, last_id=None):
     queries = [
         ('incoming', 'in:inbox -label:draft -category:promotions -category:social'),
         ('outgoing', 'in:sent -label:draft')
@@ -378,8 +382,14 @@ def get_combined_messages(service, last_id):
             subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
             sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
             recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
-            if recipient.strip().lower() == "undisclosed-recipients:;" or recipient.strip() == "":
-                recipient = "[Not Able To Show BCC Recipients]"
+            # Exception for BCC'ed emails
+            bcc_patterns = [
+                "undisclosed-recipients:;",
+                "undisclosedrecipients:;"
+            ]
+            normalized_recipient = recipient.strip().lower().replace(" ", "")
+            if normalized_recipient in bcc_patterns or recipient.strip() == "":
+                recipient = "[BCC recipients not visible after sending]"
             date_str = datetime.fromtimestamp(internal_ts).strftime("%d/%m/%Y %H:%M")
             all_messages.append({
                 'id': message['id'],
@@ -390,14 +400,8 @@ def get_combined_messages(service, last_id):
                 'date': date_str,
                 'timestamp': internal_ts
             })
-    # Sort all messages by timestamp (oldest first)
+    # Sort all messages by timestamp (oldest first) immediately after grabbing
     all_messages.sort(key=lambda m: m['timestamp'])
-    # Only keep messages after last_id (if set)
-    if last_id:
-        ids = [m['id'] for m in all_messages]
-        if last_id in ids:
-            idx = ids.index(last_id)
-            all_messages = all_messages[idx+1:]
     return all_messages
 
 def get_last_processed_id():
