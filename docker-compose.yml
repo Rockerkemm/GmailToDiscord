@@ -9,3 +9,4 @@ services:
       DISCORD_MONITOR_WEBHOOK_URL:
     volumes:
       - ./token.json:/GMAILTODISCORD/token.json
+      - ./last_processed.json:/GMAILTODISCORD/last_processed.json
