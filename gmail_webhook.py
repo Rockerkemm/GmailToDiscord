@@ -173,6 +173,24 @@ def create_discord_message(message_type, subject, sender, recipient, date):
             f"Full email data: subject='{subject}', sender='{sender}', recipient='{recipient}', date='{date}'"
         )
         logger.error(debug_info)
+        # Send error payload to Discord monitoring webhook
+        error_payload = {
+            'timestamp': datetime.now().isoformat(),
+            'error': debug_info,
+            'type': 'KeyError',
+            'traceback': traceback.format_exc(),
+            'email_data': {
+                'message_type': message_type,
+                'subject': subject,
+                'sender': sender,
+                'recipient': recipient,
+                'date': date
+            }
+        }
+        try:
+            MonitoringWebhook().send_error(error_payload, _is_internal_error=True)
+        except Exception as e:
+            logger.error(f"Failed to send error payload to Discord: {e}")
         raise KeyError(debug_info)
     format_config = DISCORD_FORMATTING[message_type]
     def format_email(email):
