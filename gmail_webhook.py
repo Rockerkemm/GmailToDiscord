@@ -175,8 +175,11 @@ class MonitoringWebhook:
             logger.info("[send_error] Error sent to Discord monitoring channel")
         except Exception as e:
             verbose_error_log("send_error:discord", e, {"error_data": error_data})
-            if not _from_queue:
+            # Fallback: log the error data to file if Discord send fails
+            try:
                 self.queue_error(error_data)
+            except Exception as qe:
+                verbose_error_log("send_error:queue_error_fallback", qe, {"error_data": error_data})
 
 class Config:
     def load_from_file(self, filename='config.json'):
@@ -265,6 +268,13 @@ def main():
                             )
                         except (KeyError, ValueError) as e:
                             verbose_error_log("main:create_discord_message", e, {"msg": msg})
+                            monitor.send_error({
+                                'timestamp': datetime.now().isoformat(),
+                                'error': str(e),
+                                'type': type(e).__name__,
+                                'traceback': traceback.format_exc(),
+                                'msg': msg
+                            }, _is_internal_error=True)
                             continue
                         if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
                             logger.info(f"[main] Sent {msg['type']} message {msg['id']} to Discord")
