@@ -243,14 +243,20 @@ logger = logging.getLogger(__name__)
 class MonitoringWebhook:
     def queue_error(self, error_data):
         try:
+            # Make error data more verbose before queuing
+            verbose_error = dict(error_data)
+            verbose_error['queued_at'] = datetime.now().isoformat()
+            verbose_error['queue_traceback'] = traceback.format_exc()
+            if 'error' in verbose_error and isinstance(verbose_error['error'], Exception):
+                verbose_error['error_str'] = str(verbose_error['error'])
             if os.path.exists(ERROR_QUEUE_FILE):
                 with open(ERROR_QUEUE_FILE, 'r') as f:
                     queue = json.load(f)
             else:
                 queue = []
-            queue.append(error_data)
+            queue.append(verbose_error)
             with open(ERROR_QUEUE_FILE, 'w') as f:
-                json.dump(queue, f)
+                json.dump(queue, f, indent=2)
         except Exception as e:
             verbose_error_log("queue_error", e, {"error_data": error_data})
 
@@ -423,12 +429,17 @@ def main():
                 except Exception as e:
                     verbose_error_log("main loop", e)
                     try:
-                        monitor.send_error({
+                        error_payload = {
                             'timestamp': datetime.now().isoformat(),
                             'error': str(e),
                             'type': type(e).__name__,
-                            'traceback': traceback.format_exc()
-                        }, _is_internal_error=True)
+                            'traceback': traceback.format_exc(),
+                            'context': 'main loop',
+                        }
+                        # If messages is available, include the last message for debugging
+                        if 'messages' in locals() and messages:
+                            error_payload['last_message'] = messages[-1]
+                        monitor.send_error(error_payload, _is_internal_error=True)
                     except Exception as inner_e:
                         verbose_error_log("main loop:send_error", inner_e)
         except Exception as e:
