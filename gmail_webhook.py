@@ -109,12 +109,21 @@ def create_discord_message(message_type, subject, sender, recipient, date):
     description = (
         f"{direction}"
         f"{main_contact}\n"
-
         f"**Subject:** "
         f"{subject_text}\n"
-
         f"**Time: **"
-        f"{date}"
+        f"{date}\n"
+        f"\n"
+        f"**Verbose Message Data:**\n```"
+
+        f"{json.dumps({ 
+            'type': message_type,
+            'subject': subject,
+            'sender': sender,
+            'recipient': recipient,
+            'date': date
+        })}"
+
     )
     return {
         "username": format_config['username'],
@@ -125,8 +134,6 @@ def create_discord_message(message_type, subject, sender, recipient, date):
             "color": format_config['color']
         }]
     }
-
-
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
