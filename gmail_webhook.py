@@ -6,12 +6,12 @@ from googleapiclient.discovery import build
 import json
 import logging
 from datetime import datetime, timedelta
-from email.utils import parsedate_to_datetime
 from ratelimit import limits, sleep_and_retry
 from filelock import FileLock
 from dotenv import load_dotenv
 import sys
 import time
+from collections import deque
 
 # Load environment variables
 load_dotenv()
@@ -42,16 +42,19 @@ DISCORD_FORMATTING = {
 # Discord rate limiting
 @sleep_and_retry
 @limits(calls=25, period=60)  # Stay under Discord's 30/minute limit
-def send_to_discord(webhook_url, payload):
-    response = requests.post(webhook_url, json=payload, timeout=10)
-    response.raise_for_status()
-    
-    # Handle Discord rate limits
-    if response.status_code == 429:
-        retry_after = response.json().get('retry_after', 5)
-        time.sleep(retry_after / 1000)  # Discord returns milliseconds
-        return False
-    return True
+def send_to_discord(webhook_url, payload, max_retries=3):
+    for attempt in range(max_retries):
+        response = requests.post(webhook_url, json=payload, timeout=10)
+        if response.status_code == 429:
+            retry_after = response.json().get('retry_after', 5)
+            time.sleep(retry_after / 1000)
+            continue
+        try:
+            response.raise_for_status()
+            return True
+        except Exception:
+            pass
+    return False
 
 
 def create_discord_message(message_type, subject, sender, recipient, date):
@@ -118,29 +121,31 @@ class MonitoringWebhook:
             logger.error(f"Failed to queue error for Discord: {e}")
 
     def flush_error_queue(self):
-        if not os.path.exists(ERROR_QUEUE_FILE):
-            return
-        try:
-            with open(ERROR_QUEUE_FILE, 'r') as f:
-                queue = json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to read error queue: {e}")
-            return
-        new_queue = []
-        for error_data in queue:
+        lock = FileLock(ERROR_QUEUE_FILE + ".lock")
+        with lock:
+            if not os.path.exists(ERROR_QUEUE_FILE):
+                return
             try:
-                self.send_error(error_data, _is_internal_error=True, _from_queue=True)
+                with open(ERROR_QUEUE_FILE, 'r') as f:
+                    queue = json.load(f)
             except Exception as e:
-                logger.error(f"Failed to resend queued error: {e}")
-                new_queue.append(error_data)
-        if new_queue:
-            try:
-                with open(ERROR_QUEUE_FILE, 'w') as f:
-                    json.dump(new_queue, f)
-            except Exception as e:
-                logger.error(f"Failed to update error queue: {e}")
-        else:
-            os.remove(ERROR_QUEUE_FILE)
+                logger.error(f"Failed to read error queue: {e}")
+                return
+            new_queue = []
+            for error_data in queue:
+                try:
+                    self.send_error(error_data, _is_internal_error=True, _from_queue=True)
+                except Exception as e:
+                    logger.error(f"Failed to resend queued error: {e}")
+                    new_queue.append(error_data)
+            if new_queue:
+                try:
+                    with open(ERROR_QUEUE_FILE, 'w') as f:
+                        json.dump(new_queue, f)
+                except Exception as e:
+                    logger.error(f"Failed to update error queue: {e}")
+            else:
+                os.remove(ERROR_QUEUE_FILE)
     def __init__(self):
         self.webhook_url = DISCORD_MONITOR_WEBHOOK_URL
         self.log_batch = []
@@ -203,22 +208,35 @@ class Config:
                 self.config.update(json.load(f))
         except FileNotFoundError:
             logger.warning(f"Config file {filename} not found, using defaults")
+            MonitoringWebhook().send_error({
+                'timestamp': datetime.now().isoformat(),
+                'error': f"Config file {filename} not found",
+                'type': 'FileNotFoundError'
+            })
         except json.JSONDecodeError:
             logger.error(f"Invalid JSON in {filename}, using defaults")
+            MonitoringWebhook().send_error({
+                'timestamp': datetime.now().isoformat(),
+                'error': f"Invalid JSON in {filename}",
+                'type': 'JSONDecodeError'
+            })
 
 
 class MessageCache:
     def __init__(self, max_size=1000):
-        self.cache = set()
-        self.max_size = max_size
-    
+        self.cache = deque(maxlen=max_size)
+        self.cache_set = set()
+
     def is_processed(self, message_id):
-        return message_id in self.cache
-    
+        return message_id in self.cache_set
+
     def mark_processed(self, message_id):
-        if len(self.cache) >= self.max_size:
-            self.cache.pop()
-        self.cache.add(message_id)
+        if message_id not in self.cache_set:
+            if len(self.cache) >= self.cache.maxlen:
+                oldest = self.cache.popleft()
+                self.cache_set.remove(oldest)
+            self.cache.append(message_id)
+            self.cache_set.add(message_id)
 
 def get_service():
     try:
@@ -336,73 +354,114 @@ def process_messages(service, query, last_id, message_type):
         logger.error(f"Error processing {message_type} messages: {str(e)}")
         return last_id
 
-def main():
-    # Attach monitor to process_messages for error reporting
-    monitor = MonitoringWebhook()
-    process_messages._monitor = monitor
+def get_combined_messages(service, last_id):
+    queries = [
+        ('incoming', 'in:inbox -label:draft -category:promotions -category:social'),
+        ('outgoing', 'in:sent -label:draft')
+    ]
+    all_messages = []
+    for message_type, query in queries:
+        results = service.users().messages().list(
+            userId='me',
+            q=query,
+            maxResults=config.config['max_messages']
+        ).execute()
+        messages = results.get('messages', [])
+        for message in messages:
+            msg_detail = service.users().messages().get(
+                userId='me',
+                id=message['id'],
+                format='full'
+            ).execute()
+            internal_ts = int(msg_detail.get('internalDate', 0)) / 1000
+            headers = msg_detail['payload']['headers']
+            subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+            sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
+            recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
+            if recipient.strip().lower() == "undisclosed-recipients:;" or recipient.strip() == "":
+                recipient = "[Not Able To Show BCC Recipients]"
+            date_str = datetime.fromtimestamp(internal_ts).strftime("%d/%m/%Y %H:%M")
+            all_messages.append({
+                'id': message['id'],
+                'type': message_type,
+                'subject': subject,
+                'sender': sender,
+                'recipient': recipient,
+                'date': date_str,
+                'timestamp': internal_ts
+            })
+    # Sort all messages by timestamp (oldest first)
+    all_messages.sort(key=lambda m: m['timestamp'])
+    # Only keep messages after last_id (if set)
+    if last_id:
+        ids = [m['id'] for m in all_messages]
+        if last_id in ids:
+            idx = ids.index(last_id)
+            all_messages = all_messages[idx+1:]
+    return all_messages
 
-    lock = ensure_single_instance()
-    
-    # Before main loop, flush any queued errors
-    monitor.flush_error_queue()
-    last_error_flush = time.time()
-    global config, message_cache
-
-    config = Config()
-    config.load_from_file()
-    message_cache = MessageCache()
+def get_last_processed_id():
     try:
-        service = get_service()
-        last_processed = get_last_processed_ids()
+        with open(LAST_PROCESSED_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get('last_id')
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
 
+def save_last_processed_id(last_id):
+    with open(LAST_PROCESSED_FILE, 'w') as f:
+        json.dump({'last_id': last_id}, f)
 
-        while True:
-            try:
-                # Process incoming emails
-                incoming_query = 'in:inbox -label:draft -category:promotions -category:social'
-                new_incoming_id = process_messages(service, incoming_query, 
-                                                last_processed['incoming'], 'incoming')
-
-                # Process outgoing emails
-                outgoing_query = 'in:sent -label:draft'
-                new_outgoing_id = process_messages(service, outgoing_query, 
-                                                last_processed['outgoing'], 'outgoing')
-
-                save_last_processed_ids(new_incoming_id, new_outgoing_id)
-
-            except Exception as e:
-                logger.error(f"Error in main loop: {str(e)}")
-                try:
-                    monitor.send_error({
-                        'timestamp': datetime.now().isoformat(),
-                        'error': str(e),
-                        'type': type(e).__name__
-                    }, _is_internal_error=True)
-                except Exception:
-                    pass
-
-            # Only flush error queue every hour
-            now = time.time()
-            if now - last_error_flush >= 3600:
-                monitor.flush_error_queue()
-                last_error_flush = now
-
-            time.sleep(config.config['check_interval'])
-
-    except Exception as e:
-        logger.error(f"Fatal error: {str(e)}")
-        try:
-            monitor.send_error({
-                'timestamp': datetime.now().isoformat(),
-                'error': str(e),
-                'type': type(e).__name__
-            }, _is_internal_error=True)
-        except Exception:
-            pass
+def main():
+    monitor = MonitoringWebhook()
+    with ensure_single_instance() as lock:
         monitor.flush_error_queue()
-
-    finally:
-        lock.release()
+        last_error_flush = time.time()
+        global config
+        config = Config()
+        config.load_from_file()
+        try:
+            service = get_service()
+            last_id = get_last_processed_id()
+            while True:
+                try:
+                    messages = get_combined_messages(service, last_id)
+                    for msg in messages:
+                        discord_payload = create_discord_message(
+                            msg['type'], msg['subject'], msg['sender'], msg['recipient'], msg['date']
+                        )
+                        if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
+                            logger.info(f"Sent {msg['type']} message {msg['id']} to Discord")
+                            last_id = msg['id']
+                            save_last_processed_id(last_id)
+                        else:
+                            logger.warning(f"Failed to send {msg['type']} message {msg['id']} (rate limited?)")
+                    now = time.time()
+                    if now - last_error_flush >= 3600:
+                        monitor.flush_error_queue()
+                        last_error_flush = now
+                    time.sleep(config.config['check_interval'])
+                except Exception as e:
+                    logger.error(f"Error in main loop: {str(e)}")
+                    try:
+                        monitor.send_error({
+                            'timestamp': datetime.now().isoformat(),
+                            'error': str(e),
+                            'type': type(e).__name__
+                        }, _is_internal_error=True)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Fatal error: {str(e)}")
+            try:
+                monitor.send_error({
+                    'timestamp': datetime.now().isoformat(),
+                    'error': str(e),
+                    'type': type(e).__name__
+                }, _is_internal_error=True)
+            except Exception:
+                pass
+            monitor.flush_error_queue()
 
 if __name__ == '__main__':
     main()
