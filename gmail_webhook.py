@@ -221,23 +221,6 @@ class Config:
                 'type': 'JSONDecodeError'
             })
 
-
-class MessageCache:
-    def __init__(self, max_size=1000):
-        self.cache = deque(maxlen=max_size)
-        self.cache_set = set()
-
-    def is_processed(self, message_id):
-        return message_id in self.cache_set
-
-    def mark_processed(self, message_id):
-        if message_id not in self.cache_set:
-            if len(self.cache) >= self.cache.maxlen:
-                oldest = self.cache.popleft()
-                self.cache_set.remove(oldest)
-            self.cache.append(message_id)
-            self.cache_set.add(message_id)
-
 def get_service():
     try:
         with open(TOKEN_FILE, 'r') as token:
@@ -264,99 +247,6 @@ def ensure_single_instance():
     except Exception:
         logger.error("Another instance is already running")
         sys.exit(1)
-
-def get_last_processed_ids():
-    try:
-        with open(LAST_PROCESSED_FILE, 'r') as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {'incoming': None, 'outgoing': None}
-
-def save_last_processed_ids(incoming_id=None, outgoing_id=None):
-    current_ids = get_last_processed_ids()
-    if incoming_id:
-        current_ids['incoming'] = incoming_id
-    if outgoing_id:
-        current_ids['outgoing'] = outgoing_id
-    
-    with open(LAST_PROCESSED_FILE, 'w') as f:
-        json.dump(current_ids, f)
-
-def process_messages(service, query, last_id, message_type):
-    try:
-        results = service.users().messages().list(
-            userId='me',
-            q=query,
-            maxResults=config.config['max_messages']
-        ).execute()
-
-        messages = results.get('messages', [])
-        if not messages:
-            logger.info(f'No {message_type} messages found.')
-            return last_id
-
-        # Gmail returns newest-first
-        newest_message_id = messages[0]['id']
-
-        if last_id:
-            #collect only messages newer than last_id
-            new_messages = []
-            for message in messages:
-                if message['id'] == last_id:
-                    break
-                new_messages.append(message)
-            # Reverse so they’re sent oldest → newest
-            new_messages = list(reversed(new_messages))
-        else:
-            #First run, only send the newest message
-            new_messages = [messages[0]]
-
-        if not new_messages:
-            logger.info(f"No new {message_type} messages to process.")
-            return last_id or newest_message_id
-
-        for message in new_messages:
-            try:
-                msg = service.users().messages().get(
-                    userId='me',
-                    id=message['id'],
-                    format='full'
-                ).execute()
-
-                headers = msg['payload']['headers']
-                subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
-                sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
-                recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
-                # Exception for BCC'ed emails
-                bcc_patterns = [
-                    "undisclosed-recipients:;",
-                ]
-                normalized_recipient = recipient.strip().lower().replace(" ", "")
-                if normalized_recipient in bcc_patterns or recipient.strip() == "":
-                    recipient = "[BCC recipients not visible after sending]"
-                # Use Gmail's internalDate for received time
-                internal_ts = int(msg.get('internalDate', 0)) / 1000
-                received_dt = datetime.fromtimestamp(internal_ts)
-                date = received_dt.strftime("%d/%m/%Y %H:%M")
-
-                discord_payload = create_discord_message(
-                    message_type, subject, sender, recipient, date
-                )
-
-                if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
-                    logger.info(f"Sent {message_type} message {message['id']} to Discord")
-                else:
-                    logger.warning(f"Failed to send {message_type} message {message['id']} (rate limited?)")
-
-            except Exception as e:
-                logger.error(f"Error processing message {message['id']}: {str(e)}")
-                continue
-
-        return newest_message_id
-
-    except Exception as e:
-        logger.error(f"Error processing {message_type} messages: {str(e)}")
-        return last_id
 
 def get_combined_messages(service, last_id=None):
     queries = [
@@ -426,10 +316,6 @@ def get_last_processed_id():
     except (FileNotFoundError, json.JSONDecodeError):
         return None
 
-def save_last_processed_id(last_id):
-    with open(LAST_PROCESSED_FILE, 'w') as f:
-        json.dump({'last_id': last_id}, f)
-
 def main():
     monitor = MonitoringWebhook()
     with ensure_single_instance() as lock:
@@ -451,7 +337,7 @@ def main():
                         if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
                             logger.info(f"Sent {msg['type']} message {msg['id']} to Discord")
                             last_id = msg['id']
-                            save_last_processed_id(last_id)
+                            get_last_processed_id(last_id)
                         else:
                             logger.warning(f"Failed to send {msg['type']} message {msg['id']} (rate limited?)")
                     now = time.time()
