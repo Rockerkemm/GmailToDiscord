@@ -1,103 +1,4 @@
-# --- Message Processing Utilities ---
 
-def get_last_processed_id():
-    try:
-        with open(LAST_PROCESSED_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get('last_id')
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
-
-def save_last_processed_id(last_id):
-    with open(LAST_PROCESSED_FILE, 'w') as f:
-        json.dump({'last_id': last_id}, f)
-
-
-
-def process_messages(service, query, last_id):
-    try:
-        results = service.users().messages().list(
-            userId='me',
-            q=query,
-            maxResults=config.config['max_messages']
-        ).execute()
-        messages = results.get('messages', [])
-        if not messages:
-            logger.info('No messages found.')
-            return [], last_id
-        newest_message_id = messages[0]['id']
-        if last_id:
-            new_messages = []
-            for message in messages:
-                if message['id'] == last_id:
-                    break
-                new_messages.append(message)
-            new_messages = list(reversed(new_messages))
-        else:
-            new_messages = [messages[0]]
-        if not new_messages:
-            logger.info("No new messages to process.")
-            return [], last_id or newest_message_id
-        processed = []
-        for message in new_messages:
-            try:
-                msg = service.users().messages().get(
-                    userId='me',
-                    id=message['id'],
-                    format='full'
-                ).execute()
-                headers = msg['payload']['headers']
-                subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
-                sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
-                recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
-                bcc_patterns = ["undisclosed-recipients:;"]
-                normalized_recipient = recipient.strip().lower().replace(" ", "")
-                if normalized_recipient in bcc_patterns or recipient.strip() == "":
-                    recipient = "[BCC recipients not visible after sending]"
-                internal_ts = int(msg.get('internalDate', 0)) / 1000
-                received_dt = datetime.fromtimestamp(internal_ts)
-                date = received_dt.strftime("%d/%m/%Y %H:%M")
-                # Determine type: outgoing if sender is 'me', else incoming
-                # Use 'me' as the authenticated user
-                user_email = 'me'
-                message_type = 'outgoing' if sender.strip().lower() == user_email else 'incoming'
-                processed.append({
-                    'type': message_type,
-                    'subject': subject,
-                    'sender': sender,
-                    'recipient': recipient,
-                    'date': date,
-                    'id': message['id']
-                })
-            except Exception as e:
-                verbose_error_log("process_messages", e, {'message_id': message.get('id')})
-                continue
-        return processed, newest_message_id
-    except Exception as e:
-        verbose_error_log("process_messages", e)
-        return [], last_id
-
-
-def get_combined_messages(service, last_id=None):
-    if last_id is None:
-        last_id = get_last_processed_id()
-    messages = []
-    try:
-        # Combine inbox and sent messages
-        inbox_msgs, new_inbox_id = process_messages(
-            service,
-            query="in:inbox OR in:sent",  # Combine both
-            last_id=last_id
-        )
-        messages.extend(inbox_msgs)
-        # Save the last processed ID
-        save_last_processed_id(new_inbox_id)
-        # Sort all messages by date (oldest first)
-        messages.sort(key=lambda m: datetime.strptime(m['date'], "%d/%m/%Y %H:%M"))
-        return messages
-    except Exception as e:
-        verbose_error_log("get_combined_messages", e)
-        return []
 import os
 import requests
 from google.oauth2.credentials import Credentials
@@ -378,6 +279,107 @@ def verbose_error_log(context, error, extra=None):
         f"Traceback:\n{traceback.format_exc()}"
     )
 
+# --- Message Processing Utilities ---
+
+def get_last_processed_id():
+    try:
+        with open(LAST_PROCESSED_FILE, 'r') as f:
+            data = json.load(f)
+            return data.get('last_id')
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+def save_last_processed_id(last_id):
+    with open(LAST_PROCESSED_FILE, 'w') as f:
+        json.dump({'last_id': last_id}, f)
+
+
+
+def process_messages(service, query, last_id):
+    try:
+        results = service.users().messages().list(
+            userId='me',
+            q=query,
+            maxResults=config.config['max_messages']
+        ).execute()
+        messages = results.get('messages', [])
+        if not messages:
+            logger.info('No messages found.')
+            return [], last_id
+        newest_message_id = messages[0]['id']
+        if last_id:
+            new_messages = []
+            for message in messages:
+                if message['id'] == last_id:
+                    break
+                new_messages.append(message)
+            new_messages = list(reversed(new_messages))
+        else:
+            new_messages = [messages[0]]
+        if not new_messages:
+            logger.info("No new messages to process.")
+            return [], last_id or newest_message_id
+        processed = []
+        for message in new_messages:
+            try:
+                msg = service.users().messages().get(
+                    userId='me',
+                    id=message['id'],
+                    format='full'
+                ).execute()
+                headers = msg['payload']['headers']
+                subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
+                sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
+                recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
+                bcc_patterns = ["undisclosed-recipients:;"]
+                normalized_recipient = recipient.strip().lower().replace(" ", "")
+                if normalized_recipient in bcc_patterns or recipient.strip() == "":
+                    recipient = "[BCC recipients not visible after sending]"
+                internal_ts = int(msg.get('internalDate', 0)) / 1000
+                received_dt = datetime.fromtimestamp(internal_ts)
+                date = received_dt.strftime("%d/%m/%Y %H:%M")
+                # Determine type: outgoing if sender is 'me', else incoming
+                # Use 'me' as the authenticated user
+                user_email = 'me'
+                message_type = 'outgoing' if sender.strip().lower() == user_email else 'incoming'
+                processed.append({
+                    'type': message_type,
+                    'subject': subject,
+                    'sender': sender,
+                    'recipient': recipient,
+                    'date': date,
+                    'id': message['id']
+                })
+            except Exception as e:
+                verbose_error_log("process_messages", e, {'message_id': message.get('id')})
+                continue
+        return processed, newest_message_id
+    except Exception as e:
+        verbose_error_log("process_messages", e)
+        return [], last_id
+
+
+def get_combined_messages(service, last_id=None):
+    if last_id is None:
+        last_id = get_last_processed_id()
+    messages = []
+    try:
+        # Combine inbox and sent messages
+        inbox_msgs, new_inbox_id = process_messages(
+            service,
+            query="in:inbox OR in:sent",  # Combine both
+            last_id=last_id
+        )
+        messages.extend(inbox_msgs)
+        # Save the last processed ID
+        save_last_processed_id(new_inbox_id)
+        # Sort all messages by date (oldest first)
+        messages.sort(key=lambda m: datetime.strptime(m['date'], "%d/%m/%Y %H:%M"))
+        return messages
+    except Exception as e:
+        verbose_error_log("get_combined_messages", e)
+        return []
+
 def main():
     monitor = MonitoringWebhook()
     with ensure_single_instance() as lock:
@@ -446,3 +448,5 @@ def main():
             except Exception as inner_e:
                 verbose_error_log("main:fatal_send_error", inner_e)
             monitor.flush_error_queue()
+
+
