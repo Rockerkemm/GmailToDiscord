@@ -1,13 +1,19 @@
 # --- Message Processing Utilities ---
-def get_last_processed_ids():
+
+def get_last_processed_id():
     try:
         with open(LAST_PROCESSED_FILE, 'r') as f:
-            return json.load(f)
+            data = json.load(f)
+            return data.get('last_id')
     except (FileNotFoundError, json.JSONDecodeError):
-        return {'incoming': None, 'outgoing': None}
+        return None
+
+def save_last_processed_id(last_id):
+    with open(LAST_PROCESSED_FILE, 'w') as f:
+        json.dump({'last_id': last_id}, f)
 
 def save_last_processed_ids(incoming_id=None, outgoing_id=None):
-    current_ids = get_last_processed_ids()
+    current_ids = get_last_processed_id()
     if incoming_id:
         current_ids['incoming'] = incoming_id
     if outgoing_id:
@@ -15,7 +21,8 @@ def save_last_processed_ids(incoming_id=None, outgoing_id=None):
     with open(LAST_PROCESSED_FILE, 'w') as f:
         json.dump(current_ids, f)
 
-def process_messages(service, query, last_id, message_type):
+
+def process_messages(service, query, last_id):
     try:
         results = service.users().messages().list(
             userId='me',
@@ -24,7 +31,7 @@ def process_messages(service, query, last_id, message_type):
         ).execute()
         messages = results.get('messages', [])
         if not messages:
-            logger.info(f'No {message_type} messages found.')
+            logger.info('No messages found.')
             return [], last_id
         newest_message_id = messages[0]['id']
         if last_id:
@@ -37,7 +44,7 @@ def process_messages(service, query, last_id, message_type):
         else:
             new_messages = [messages[0]]
         if not new_messages:
-            logger.info(f"No new {message_type} messages to process.")
+            logger.info("No new messages to process.")
             return [], last_id or newest_message_id
         processed = []
         for message in new_messages:
@@ -59,7 +66,6 @@ def process_messages(service, query, last_id, message_type):
                 received_dt = datetime.fromtimestamp(internal_ts)
                 date = received_dt.strftime("%d/%m/%Y %H:%M")
                 processed.append({
-                    'type': message_type,
                     'subject': subject,
                     'sender': sender,
                     'recipient': recipient,
@@ -67,39 +73,28 @@ def process_messages(service, query, last_id, message_type):
                     'id': message['id']
                 })
             except Exception as e:
-                verbose_error_log(f"process_messages:{message_type}", e, {'message_id': message.get('id')})
+                verbose_error_log("process_messages", e, {'message_id': message.get('id')})
                 continue
         return processed, newest_message_id
     except Exception as e:
-        verbose_error_log(f"process_messages:{message_type}", e)
+        verbose_error_log("process_messages", e)
         return [], last_id
 
-def get_combined_messages(service, last_ids=None):
-    if last_ids is None:
-        last_ids = get_last_processed_ids()
+
+def get_combined_messages(service, last_id=None):
+    if last_id is None:
+        last_id = get_last_processed_id()
     messages = []
     try:
-        # Incoming messages
-        incoming_msgs, new_incoming_id = process_messages(
+        # Combine inbox and sent messages
+        inbox_msgs, new_inbox_id = process_messages(
             service,
-            query="in:inbox",  # You can customize this query
-            last_id=last_ids.get('incoming'),
-            message_type='incoming'
+            query="in:inbox OR in:sent",  # Combine both
+            last_id=last_id
         )
-        # Outgoing messages
-        outgoing_msgs, new_outgoing_id = process_messages(
-            service,
-            query="in:sent",  # You can customize this query
-            last_id=last_ids.get('outgoing'),
-            message_type='outgoing'
-        )
-        messages.extend(incoming_msgs)
-        messages.extend(outgoing_msgs)
-        # Save the last processed IDs
-        save_last_processed_ids(
-            incoming_id=new_incoming_id,
-            outgoing_id=new_outgoing_id
-        )
+        messages.extend(inbox_msgs)
+        # Save the last processed ID
+        save_last_processed_id(new_inbox_id)
         # Sort all messages by date (oldest first)
         messages.sort(key=lambda m: datetime.strptime(m['date'], "%d/%m/%Y %H:%M"))
         return messages
