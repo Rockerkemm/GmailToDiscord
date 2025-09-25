@@ -371,7 +371,21 @@ def get_combined_messages(service, last_id=None):
             maxResults=config.config['max_messages']
         ).execute()
         messages = results.get('messages', [])
-        for message in messages:
+        # Only process messages newer than last_id
+        filtered_messages = []
+        if last_id:
+            found_last = False
+            for message in messages:
+                if message['id'] == last_id:
+                    found_last = True
+                    break
+                filtered_messages.append(message)
+            # Reverse so oldest processed first
+            filtered_messages = list(reversed(filtered_messages))
+        else:
+            # First run, only process the newest message
+            filtered_messages = [messages[0]] if messages else []
+        for message in filtered_messages:
             msg_detail = service.users().messages().get(
                 userId='me',
                 id=message['id'],
@@ -400,7 +414,7 @@ def get_combined_messages(service, last_id=None):
                 'date': date_str,
                 'timestamp': internal_ts
             })
-    # Sort all messages by timestamp (oldest first) immediately after grabbing
+    # Sort all messages by timestamp (oldest first)
     all_messages.sort(key=lambda m: m['timestamp'])
     return all_messages
 
