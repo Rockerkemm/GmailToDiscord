@@ -62,11 +62,16 @@ def send_to_discord(webhook_url, payload, max_retries=3):
 def create_discord_message(message_type, subject, sender, recipient, date):
     if message_type not in DISCORD_FORMATTING:
         debug_info = (
-            f"Invalid message_type: '{message_type}'. Must be 'incoming' or 'outgoing'.\n"
+            f"[create_discord_message] KeyError: Invalid message_type: '{message_type}'. Must be 'incoming' or 'outgoing'.\n"
             f"Full email data: subject='{subject}', sender='{sender}', recipient='{recipient}', date='{date}'"
         )
-        logger.error(debug_info)
-        # Send error payload to Discord monitoring webhook
+        verbose_error_log("create_discord_message:KeyError", debug_info, {
+            'message_type': message_type,
+            'subject': subject,
+            'sender': sender,
+            'recipient': recipient,
+            'date': date
+        })
         error_payload = {
             'timestamp': datetime.now().isoformat(),
             'error': debug_info,
@@ -83,7 +88,7 @@ def create_discord_message(message_type, subject, sender, recipient, date):
         try:
             MonitoringWebhook().send_error(error_payload, _is_internal_error=True)
         except Exception as e:
-            logger.error(f"Failed to send error payload to Discord: {e}")
+            verbose_error_log("create_discord_message:send_error_failed", e, error_payload)
         raise KeyError(debug_info)
     format_config = DISCORD_FORMATTING[message_type]
     def format_email(email):
@@ -400,14 +405,27 @@ def main():
                                 msg['type'], msg['subject'], msg['sender'], msg['recipient'], msg['date']
                             )
                         except (KeyError, ValueError) as e:
-                            verbose_error_log("main:create_discord_message", e, {"msg": msg})
-                            monitor.send_error({
-                                'timestamp': datetime.now().isoformat(),
-                                'error': str(e),
-                                'type': type(e).__name__,
-                                'traceback': traceback.format_exc(),
-                                'msg': msg
-                            }, _is_internal_error=True)
+                            # Verbose KeyError handling
+                            if isinstance(e, KeyError):
+                                verbose_error_log("main:create_discord_message:KeyError", e, {"msg": msg})
+                                error_payload = {
+                                    'timestamp': datetime.now().isoformat(),
+                                    'error': str(e),
+                                    'type': 'KeyError',
+                                    'traceback': traceback.format_exc(),
+                                    'msg': msg
+                                }
+                                monitor.send_error(error_payload, _is_internal_error=True)
+                            else:
+                                verbose_error_log("main:create_discord_message:ValueError", e, {"msg": msg})
+                                error_payload = {
+                                    'timestamp': datetime.now().isoformat(),
+                                    'error': str(e),
+                                    'type': 'ValueError',
+                                    'traceback': traceback.format_exc(),
+                                    'msg': msg
+                                }
+                                monitor.send_error(error_payload, _is_internal_error=True)
                             continue
                         if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
                             logger.info(f"[main] Sent {msg['type']} message {msg['id']} to Discord")
