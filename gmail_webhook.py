@@ -60,10 +60,10 @@ def get_local_now():
 
 def format_datetime(date_str):
     try:
-        dt = parsedate_to_datetime(date_str)
-        # Convert to server's local timezone
-        local_dt = dt.astimezone()
-        return local_dt.strftime("%d %B %Y - %H:%M (%Z)")
+        dt = parsedate_to_datetime(date_str).astimezone()
+        unix_ts = int(dt.timestamp())
+        # Use full date/time style
+        return f"<t:{unix_ts}:f>"
     except Exception:
         return date_str
 
@@ -353,6 +353,61 @@ def process_messages(service, query, last_id, message_type):
         logger.error(f"Error processing {message_type} messages: {str(e)}")
         return last_id
 
+def fetch_messages(service, query, last_timestamp):
+    """Fetch messages newer than last_timestamp for a given query."""
+    all_messages = []
+    page_token = None
+    while True:
+        results = service.users().messages().list(
+            userId='me',
+            q=query,
+            maxResults=config.config['max_messages'],
+            pageToken=page_token
+        ).execute()
+        messages = results.get('messages', [])
+        if not messages:
+            break
+        for message in messages:
+            msg = service.users().messages().get(
+                userId='me',
+                id=message['id'],
+                format='full'
+            ).execute()
+            headers = msg['payload']['headers']
+            date_str = next((h['value'] for h in headers if h['name'].lower() == 'date'), None)
+            if not date_str:
+                continue
+            try:
+                dt = parsedate_to_datetime(date_str).astimezone()
+            except Exception:
+                continue
+            if last_timestamp is None or dt > last_timestamp:
+                all_messages.append({
+                    'id': message['id'],
+                    'type': query.split(':')[0],  # crude, but works for 'in:inbox'/'in:sent'
+                    'subject': next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject'),
+                    'sender': next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender'),
+                    'recipient': next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient'),
+                    'date': date_str,
+                    'datetime': dt
+                })
+        if not results.get('nextPageToken'):
+            break
+        page_token = results['nextPageToken']
+    return all_messages
+
+def get_last_processed_timestamp():
+    try:
+        with open('last_processed_timestamp.txt', 'r') as f:
+            ts = f.read().strip()
+            return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+def save_last_processed_timestamp(dt):
+    with open('last_processed_timestamp.txt', 'w') as f:
+        f.write(dt.isoformat())
+
 def main():
     monitor = MonitoringWebhook()
     process_messages._monitor = monitor
@@ -367,26 +422,34 @@ def main():
     message_cache = MessageCache()
     try:
         service = get_service()
-        last_processed = get_last_processed_ids()
+        last_processed_ts = get_last_processed_timestamp()
 
         while True:
             try:
-                # Process incoming emails
+                # Fetch both incoming and outgoing messages newer than last_processed_ts
                 incoming_query = 'in:inbox -label:draft -category:promotions -category:social'
-                new_incoming_id = process_messages(
-                    service, incoming_query, last_processed['incoming'], 'incoming'
-                )
-
-                # Process outgoing emails
                 outgoing_query = 'in:sent -label:draft'
-                new_outgoing_id = process_messages(
-                    service, outgoing_query, last_processed['outgoing'], 'outgoing'
-                )
 
-                # Update last_processed dict so next loop uses new IDs
-                last_processed['incoming'] = new_incoming_id
-                last_processed['outgoing'] = new_outgoing_id
-                save_last_processed_ids(new_incoming_id, new_outgoing_id)
+                incoming_msgs = fetch_messages(service, incoming_query, last_processed_ts)
+                outgoing_msgs = fetch_messages(service, outgoing_query, last_processed_ts)
+
+                all_msgs = incoming_msgs + outgoing_msgs
+                # Sort by datetime (oldest first)
+                all_msgs.sort(key=lambda m: m['datetime'])
+
+                for msg in all_msgs:
+                    message_type = 'incoming' if msg['type'] == 'in' else 'outgoing'
+                    discord_payload = create_discord_message(
+                        message_type, msg['subject'], msg['sender'], msg['recipient'], msg['date']
+                    )
+                    if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
+                        logger.info(f"Sent {message_type} message {msg['id']} to Discord")
+                        last_processed_ts = msg['datetime']
+                    else:
+                        logger.warning(f"Failed to send {message_type} message {msg['id']} (rate limited?)")
+
+                if all_msgs:
+                    save_last_processed_timestamp(last_processed_ts)
 
             except Exception as e:
                 logger.error(f"Error in main loop: {str(e)}")
