@@ -205,7 +205,7 @@ class Config:
     def __init__(self):
         self.config = {
             'max_messages': 50,
-            'check_interval': 300,  # 5 minutes
+            'check_interval': 60,  # 1 minutes
             'webhook_timeout': 10,
             'batch_size': 10,
             'retry_attempts': 3
