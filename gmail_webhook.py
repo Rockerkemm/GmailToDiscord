@@ -61,8 +61,9 @@ def get_local_now():
 def format_datetime(date_str):
     try:
         dt = parsedate_to_datetime(date_str)
-        # Do not convert to local time; keep original timezone from header
-        return dt.strftime("%d %B %Y - %H:%M (%Z)")
+        # Convert to server's local timezone
+        local_dt = dt.astimezone()
+        return local_dt.strftime("%d %B %Y - %H:%M (%Z)")
     except Exception:
         return date_str
 
