@@ -310,12 +310,8 @@ def process_messages(service, query, last_id, message_type):
                 break
             page_token = results['nextPageToken']
 
-        # On first run, only send the newest message
-        if not last_id:
-            if all_messages:
-                all_messages = [all_messages[0]]
-            elif newest_message_id:
-                all_messages = [{'id': newest_message_id}]
+
+        # Always send all available messages (oldest first)
 
         # Reverse so they’re sent oldest → newest
         all_messages = list(reversed(all_messages))
