@@ -1,4 +1,3 @@
-
 import os
 import requests
 from google.oauth2.credentials import Credentials
@@ -6,14 +5,14 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from ratelimit import limits, sleep_and_retry
 from filelock import FileLock
 from dotenv import load_dotenv
 import sys
 import time
-from collections import deque
-import traceback
+import pytz
 
 # Load environment variables
 load_dotenv()
@@ -44,86 +43,56 @@ DISCORD_FORMATTING = {
 # Discord rate limiting
 @sleep_and_retry
 @limits(calls=25, period=60)  # Stay under Discord's 30/minute limit
-def send_to_discord(webhook_url, payload, max_retries=3):
-    for attempt in range(max_retries):
-        response = requests.post(webhook_url, json=payload, timeout=10)
-        if response.status_code == 429:
-            retry_after = response.json().get('retry_after', 5)
-            time.sleep(retry_after / 1000)
-            continue
-        try:
-            response.raise_for_status()
-            return True
-        except Exception:
-            pass
-    return False
+def send_to_discord(webhook_url, payload):
+    response = requests.post(webhook_url, json=payload, timeout=10)
+    response.raise_for_status()
+    
+    # Handle Discord rate limits
+    if response.status_code == 429:
+        retry_after = response.json().get('retry_after', 5)
+        time.sleep(retry_after / 1000)  # Discord returns milliseconds
+        return False
+    return True
 
+def get_local_now():
+    # Use system local timezone
+    return datetime.now().astimezone()
+
+def format_datetime(date_str):
+    try:
+        dt = parsedate_to_datetime(date_str)
+        dt = dt.astimezone()  # Convert to local time
+        return dt.strftime("%d %B %Y - %H:%M")
+    except Exception:
+        return date_str
 
 def create_discord_message(message_type, subject, sender, recipient, date):
-    if message_type not in DISCORD_FORMATTING:
-        debug_info = (
-            f"[create_discord_message] KeyError: Invalid message_type: '{message_type}'. Must be 'incoming' or 'outgoing'.\n"
-            f"Full email data: subject='{subject}', sender='{sender}', recipient='{recipient}', date='{date}'"
-        )
-        verbose_error_log("create_discord_message:KeyError", debug_info, {
-            'message_type': message_type,
-            'subject': subject,
-            'sender': sender,
-            'recipient': recipient,
-            'date': date
-        })
-        error_payload = {
-            'timestamp': datetime.now().isoformat(),
-            'error': debug_info,
-            'type': 'KeyError',
-            'traceback': traceback.format_exc(),
-            'email_data': {
-                'message_type': message_type,
-                'subject': subject,
-                'sender': sender,
-                'recipient': recipient,
-                'date': date
-            }
-        }
-        try:
-            MonitoringWebhook().send_error(error_payload, _is_internal_error=True)
-        except Exception as e:
-            verbose_error_log("create_discord_message:send_error_failed", e, error_payload)
-        raise KeyError(debug_info)
     format_config = DISCORD_FORMATTING[message_type]
     def format_email(email):
         email = email.split(',')[0].strip()
         return email
-
+    
     if message_type == 'incoming':
         main_contact = format_email(sender)
         direction = "**From: **"
         title = f"📬 **New Email Received**"
+    
     else:
         main_contact = format_email(recipient)
         direction = "**To: **"
         title = f"✈️ **New Email Sent**"
-
+        
     subject_text = subject if subject else ""
-    # 'date' is already formatted before being passed in
+    formatted_date = format_datetime(date)
     description = (
         f"{direction}"
         f"{main_contact}\n"
+
         f"**Subject:** "
         f"{subject_text}\n"
+
         f"**Time: **"
-        f"{date}\n"
-        f"\n"
-        f"**Verbose Message Data:**\n```"
-
-        f"{json.dumps({ 
-            'type': message_type,
-            'subject': subject,
-            'sender': sender,
-            'recipient': recipient,
-            'date': date
-        })}"
-
+        f"{formatted_date}"
     )
     return {
         "username": format_config['username'],
@@ -134,6 +103,8 @@ def create_discord_message(message_type, subject, sender, recipient, date):
             "color": format_config['color']
         }]
     }
+
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -148,53 +119,64 @@ logger = logging.getLogger(__name__)
 class MonitoringWebhook:
     def queue_error(self, error_data):
         try:
-            # Make error data more verbose before queuing
-            verbose_error = dict(error_data)
-            verbose_error['queued_at'] = datetime.now().isoformat()
-            verbose_error['queue_traceback'] = traceback.format_exc()
-            if 'error' in verbose_error and isinstance(verbose_error['error'], Exception):
-                verbose_error['error_str'] = str(verbose_error['error'])
             if os.path.exists(ERROR_QUEUE_FILE):
                 with open(ERROR_QUEUE_FILE, 'r') as f:
                     queue = json.load(f)
             else:
                 queue = []
-            queue.append(verbose_error)
+            queue.append(error_data)
             with open(ERROR_QUEUE_FILE, 'w') as f:
-                json.dump(queue, f, indent=2)
+                json.dump(queue, f)
         except Exception as e:
-            verbose_error_log("queue_error", e, {"error_data": error_data})
+            logger.error(f"Failed to queue error for Discord: {e}")
 
     def flush_error_queue(self):
-        lock = FileLock(ERROR_QUEUE_FILE + ".lock")
-        with lock:
-            if not os.path.exists(ERROR_QUEUE_FILE):
-                return
+        if not os.path.exists(ERROR_QUEUE_FILE):
+            return
+        try:
+            with open(ERROR_QUEUE_FILE, 'r') as f:
+                queue = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to read error queue: {e}")
+            return
+        new_queue = []
+        for error_data in queue:
             try:
-                with open(ERROR_QUEUE_FILE, 'r') as f:
-                    queue = json.load(f)
+                self.send_error(error_data, _is_internal_error=True, _from_queue=True)
             except Exception as e:
-                verbose_error_log("flush_error_queue:read", e)
-                return
-            new_queue = []
-            for error_data in queue:
-                try:
-                    self.send_error(error_data, _is_internal_error=True, _from_queue=True)
-                except Exception as e:
-                    verbose_error_log("flush_error_queue:send_error", e, {"error_data": error_data})
-                    new_queue.append(error_data)
-            if new_queue:
-                try:
-                    with open(ERROR_QUEUE_FILE, 'w') as f:
-                        json.dump(new_queue, f)
-                except Exception as e:
-                    verbose_error_log("flush_error_queue:update", e)
-            else:
-                os.remove(ERROR_QUEUE_FILE)
+                logger.error(f"Failed to resend queued error: {e}")
+                new_queue.append(error_data)
+        if new_queue:
+            try:
+                with open(ERROR_QUEUE_FILE, 'w') as f:
+                    json.dump(new_queue, f)
+            except Exception as e:
+                logger.error(f"Failed to update error queue: {e}")
+        else:
+            os.remove(ERROR_QUEUE_FILE)
+    def __init__(self):
+        self.webhook_url = DISCORD_MONITOR_WEBHOOK_URL
+        self.log_batch = []
+        self.last_log_send = self.load_last_log_send()
+        self.batch_size = 1000
+        self.weekly_interval = 7 * 24 * 60 * 60
+
+    def load_last_log_send(self):
+        try:
+            with open('last_log_send.txt', 'r') as f:
+                timestamp = f.read().strip()
+                return datetime.fromisoformat(timestamp).astimezone()
+        except (FileNotFoundError, ValueError):
+            return get_local_now() - timedelta(days=7)
+
+    def save_last_log_send(self):
+        with open('last_log_send.txt', 'w') as f:
+            f.write(get_local_now().isoformat())
 
     def send_error(self, error_data, _is_internal_error=False, _from_queue=False):
+        # Prevent recursive error reporting except for queue flush
         if _is_internal_error and not _from_queue:
-            verbose_error_log("send_error:internal", error_data.get('error', 'Unknown'), error_data)
+            logger.error(f"Failed to send error to Discord: {error_data['error']}")
             self.queue_error(error_data)
             return
         try:
@@ -204,48 +186,52 @@ class MonitoringWebhook:
                 "embeds": [
                     {
                         "title": "❌ Error Alert",
-                        "description": (
-                            f"**Type:** `{error_data.get('type', 'N/A')}`\n"
-                            f"**Time:** {error_data.get('timestamp', 'N/A')}\n"
-                            f"**Error:**\n```\n{error_data.get('error', 'N/A')}\n```\n"
-                            f"**Traceback:**\n```\n{error_data.get('traceback', 'N/A')}\n```\n"
-                            f"**Error Data:**\n```\n{json.dumps(error_data, indent=2)}\n```"
-                        ),
+                        "description": f"**Type:** `{error_data['type']}`\n**Time:** {error_data['timestamp']}\n**Error:**\n```\n{error_data['error']}\n```",
                         "color": 15158332
                     }
                 ]
             }
             send_to_discord(self.webhook_url, discord_payload)
-            logger.info("[send_error] Error sent to Discord monitoring channel")
+            logger.info("Error sent to Discord monitoring channel")
         except Exception as e:
-            verbose_error_log("send_error:discord", e, {"error_data": error_data})
-            # Fallback: log the error data to file if Discord send fails
-            try:
+            # Only log, and queue the error for later retry
+            logger.error(f"Failed to send error to Discord: {e}")
+            if not _from_queue:
                 self.queue_error(error_data)
-            except Exception as qe:
-                verbose_error_log("send_error:queue_error_fallback", qe, {"error_data": error_data})
+
 
 class Config:
+    def __init__(self):
+        self.config = {
+            'max_messages': 50,
+            'check_interval': 300,  # 5 minutes
+            'webhook_timeout': 10,
+            'batch_size': 10,
+            'retry_attempts': 3
+        }
+    
     def load_from_file(self, filename='config.json'):
         try:
             with open(filename, 'r') as f:
                 self.config.update(json.load(f))
-        except FileNotFoundError as e:
-            verbose_error_log("Config.load_from_file:FileNotFoundError", e, {"filename": filename})
-            MonitoringWebhook().send_error({
-                'timestamp': datetime.now().isoformat(),
-                'error': f"Config file {filename} not found\nTraceback: {traceback.format_exc()}",
-                'type': 'FileNotFoundError',
-                'traceback': traceback.format_exc()
-            })
-        except json.JSONDecodeError as e:
-            verbose_error_log("Config.load_from_file:JSONDecodeError", e, {"filename": filename})
-            MonitoringWebhook().send_error({
-                'timestamp': datetime.now().isoformat(),
-                'error': f"Invalid JSON in {filename}\nTraceback: {traceback.format_exc()}",
-                'type': 'JSONDecodeError',
-                'traceback': traceback.format_exc()
-            })
+        except FileNotFoundError:
+            logger.warning(f"Config file {filename} not found, using defaults")
+        except json.JSONDecodeError:
+            logger.error(f"Invalid JSON in {filename}, using defaults")
+
+
+class MessageCache:
+    def __init__(self, max_size=1000):
+        self.cache = set()
+        self.max_size = max_size
+    
+    def is_processed(self, message_id):
+        return message_id in self.cache
+    
+    def mark_processed(self, message_id):
+        if len(self.cache) >= self.max_size:
+            self.cache.pop()
+        self.cache.add(message_id)
 
 def get_service():
     try:
@@ -255,13 +241,14 @@ def get_service():
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
+                # Save refreshed credentials back to token.json
                 with open(TOKEN_FILE, 'w') as token:
                     token.write(creds.to_json())
             else:
                 raise Exception("Token is invalid and cannot be refreshed")
         return build('gmail', 'v1', credentials=creds)
     except Exception as e:
-        verbose_error_log("get_service", e)
+        logger.error(f"Error creating Gmail service: {str(e)}")
         raise
 
 def ensure_single_instance():
@@ -269,69 +256,60 @@ def ensure_single_instance():
     try:
         lock.acquire(timeout=1)
         return lock
-    except Exception as e:
-        verbose_error_log("ensure_single_instance", e)
+    except Exception:
+        logger.error("Another instance is already running")
         sys.exit(1)
 
-def get_last_processed_id():
+def get_last_processed_ids():
     try:
         with open(LAST_PROCESSED_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get('last_id')
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        verbose_error_log("get_last_processed_id", e)
-        return None
-
-def verbose_error_log(context, error, extra=None):
-    logger.error(
-        f"[{context}] Exception occurred!\n"
-        f"Type: {type(error).__name__}\n"
-        f"Error: {error}\n"
-        f"Extra: {extra}\n"
-        f"Traceback:\n{traceback.format_exc()}"
-    )
-
-# --- Message Processing Utilities ---
-
-def get_last_processed_id():
-    try:
-        with open(LAST_PROCESSED_FILE, 'r') as f:
-            data = json.load(f)
-            return data.get('last_id')
+            return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
-        return None
+        return {'incoming': None, 'outgoing': None}
 
-def save_last_processed_id(last_id):
+def save_last_processed_ids(incoming_id=None, outgoing_id=None):
+    current_ids = get_last_processed_ids()
+    if incoming_id:
+        current_ids['incoming'] = incoming_id
+    if outgoing_id:
+        current_ids['outgoing'] = outgoing_id
+    
     with open(LAST_PROCESSED_FILE, 'w') as f:
-        json.dump({'last_id': last_id}, f)
+        json.dump(current_ids, f)
 
-
-
-def process_messages(service, query, last_id):
+def process_messages(service, query, last_id, message_type):
     try:
         results = service.users().messages().list(
             userId='me',
             q=query,
             maxResults=config.config['max_messages']
         ).execute()
+
         messages = results.get('messages', [])
         if not messages:
-            logger.info('No messages found.')
-            return [], last_id
+            logger.info(f'No {message_type} messages found.')
+            return last_id
+
+        # Gmail returns newest-first
         newest_message_id = messages[0]['id']
+
         if last_id:
+            #collect only messages newer than last_id
             new_messages = []
             for message in messages:
                 if message['id'] == last_id:
                     break
                 new_messages.append(message)
+            # Reverse so they’re sent oldest → newest
             new_messages = list(reversed(new_messages))
         else:
+            #First run, only send the newest message
             new_messages = [messages[0]]
+
         if not new_messages:
-            logger.info("No new messages to process.")
-            return [], last_id or newest_message_id
-        processed = []
+            logger.info(f"No new {message_type} messages to process.")
+            return last_id or newest_message_id
+
         for message in new_messages:
             try:
                 msg = service.users().messages().get(
@@ -339,139 +317,99 @@ def process_messages(service, query, last_id):
                     id=message['id'],
                     format='full'
                 ).execute()
+
                 headers = msg['payload']['headers']
                 subject = next((h['value'] for h in headers if h['name'].lower() == 'subject'), 'No Subject')
                 sender = next((h['value'] for h in headers if h['name'].lower() == 'from'), 'No Sender')
                 recipient = next((h['value'] for h in headers if h['name'].lower() == 'to'), 'No Recipient')
-                bcc_patterns = ["undisclosed-recipients:;"]
-                normalized_recipient = recipient.strip().lower().replace(" ", "")
-                if normalized_recipient in bcc_patterns or recipient.strip() == "":
-                    recipient = "[BCC recipients not visible after sending]"
-                internal_ts = int(msg.get('internalDate', 0)) / 1000
-                received_dt = datetime.fromtimestamp(internal_ts)
-                date = received_dt.strftime("%d/%m/%Y %H:%M")
-                # Determine type: outgoing if sender is 'me', else incoming
-                # Use 'me' as the authenticated user
-                user_email = 'me'
-                message_type = 'outgoing' if sender.strip().lower() == user_email else 'incoming'
-                processed.append({
-                    'type': message_type,
-                    'subject': subject,
-                    'sender': sender,
-                    'recipient': recipient,
-                    'date': date,
-                    'id': message['id']
-                })
+                date = next((h['value'] for h in headers if h['name'].lower() == 'date'), 'No Date')
+
+                discord_payload = create_discord_message(
+                    message_type, subject, sender, recipient, date
+                )
+
+                if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
+                    logger.info(f"Sent {message_type} message {message['id']} to Discord")
+                else:
+                    logger.warning(f"Failed to send {message_type} message {message['id']} (rate limited?)")
+
             except Exception as e:
-                verbose_error_log("process_messages", e, {'message_id': message.get('id')})
+                logger.error(f"Error processing message {message['id']}: {str(e)}")
                 continue
-        return processed, newest_message_id
-    except Exception as e:
-        verbose_error_log("process_messages", e)
-        return [], last_id
 
+        return newest_message_id
 
-def get_combined_messages(service, last_id=None):
-    if last_id is None:
-        last_id = get_last_processed_id()
-    messages = []
-    try:
-        # Combine inbox and sent messages
-        inbox_msgs, new_inbox_id = process_messages(
-            service,
-            query="in:inbox OR in:sent",  # Combine both
-            last_id=last_id
-        )
-        messages.extend(inbox_msgs)
-        # Save the last processed ID
-        save_last_processed_id(new_inbox_id)
-        # Sort all messages by date (oldest first)
-        messages.sort(key=lambda m: datetime.strptime(m['date'], "%d/%m/%Y %H:%M"))
-        return messages
     except Exception as e:
-        verbose_error_log("get_combined_messages", e)
-        return []
+        logger.error(f"Error processing {message_type} messages: {str(e)}")
+        return last_id
 
 def main():
     monitor = MonitoringWebhook()
-    with ensure_single_instance() as lock:
-        monitor.flush_error_queue()
-        last_error_flush = time.time()
-        global config
-        config = Config()
-        config.load_from_file()
-        try:
-            service = get_service()
-            last_id = get_last_processed_id()
-            while True:
-                try:
-                    messages = get_combined_messages(service, last_id)
-                    for msg in messages:
-                        try:
-                            discord_payload = create_discord_message(
-                                msg['type'], msg['subject'], msg['sender'], msg['recipient'], msg['date']
-                            )
-                        except (KeyError, ValueError) as e:
-                            # Verbose KeyError handling
-                            if isinstance(e, KeyError):
-                                verbose_error_log("main:create_discord_message:KeyError", e, {"msg": msg})
-                                error_payload = {
-                                    'timestamp': datetime.now().isoformat(),
-                                    'error': str(e),
-                                    'type': 'KeyError',
-                                    'traceback': traceback.format_exc(),
-                                    'msg': msg
-                                }
-                                monitor.send_error(error_payload, _is_internal_error=True)
-                            else:
-                                verbose_error_log("main:create_discord_message:ValueError", e, {"msg": msg})
-                                error_payload = {
-                                    'timestamp': datetime.now().isoformat(),
-                                    'error': str(e),
-                                    'type': 'ValueError',
-                                    'traceback': traceback.format_exc(),
-                                    'msg': msg
-                                }
-                                monitor.send_error(error_payload, _is_internal_error=True)
-                            continue
-                        if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
-                            logger.info(f"[main] Sent {msg['type']} message {msg['id']} to Discord")
-                            last_id = msg['id']
-                            get_last_processed_id(last_id)
-                        else:
-                            logger.warning(f"[main] Failed to send {msg['type']} message {msg['id']} (rate limited?)")
-                    now = time.time()
-                    if now - last_error_flush >= 3600:
-                        monitor.flush_error_queue()
-                        last_error_flush = now
-                    time.sleep(config.config['check_interval'])
-                except Exception as e:
-                    verbose_error_log("main loop", e)
-                    try:
-                        error_payload = {
-                            'timestamp': datetime.now().isoformat(),
-                            'error': str(e),
-                            'type': type(e).__name__,
-                            'traceback': traceback.format_exc(),
-                            'context': 'main loop',
-                        }
-                        # If messages is available, include the last message for debugging
-                        if 'messages' in locals() and messages:
-                            error_payload['last_message'] = messages[-1]
-                        monitor.send_error(error_payload, _is_internal_error=True)
-                    except Exception as inner_e:
-                        verbose_error_log("main loop:send_error", inner_e)
-        except Exception as e:
-            verbose_error_log("main", e)
+    process_messages._monitor = monitor
+
+    lock = ensure_single_instance()
+    monitor.flush_error_queue()
+    last_error_flush = time.time()
+    global config, message_cache
+
+    config = Config()
+    config.load_from_file()
+    message_cache = MessageCache()
+    try:
+        service = get_service()
+        last_processed = get_last_processed_ids()
+
+        while True:
             try:
-                monitor.send_error({
-                    'timestamp': datetime.now().isoformat(),
-                    'error': str(e),
-                    'type': type(e).__name__,
-                    'traceback': traceback.format_exc()
-                }, _is_internal_error=True)
-            except Exception as inner_e:
-                verbose_error_log("main:fatal_send_error", inner_e)
-            monitor.flush_error_queue()
+                # Process incoming emails
+                incoming_query = 'in:inbox -label:draft -category:promotions -category:social'
+                new_incoming_id = process_messages(
+                    service, incoming_query, last_processed['incoming'], 'incoming'
+                )
 
+                # Process outgoing emails
+                outgoing_query = 'in:sent -label:draft'
+                new_outgoing_id = process_messages(
+                    service, outgoing_query, last_processed['outgoing'], 'outgoing'
+                )
 
+                # Update last_processed dict so next loop uses new IDs
+                last_processed['incoming'] = new_incoming_id
+                last_processed['outgoing'] = new_outgoing_id
+                save_last_processed_ids(new_incoming_id, new_outgoing_id)
+
+            except Exception as e:
+                logger.error(f"Error in main loop: {str(e)}")
+                try:
+                    monitor.send_error({
+                        'timestamp': get_local_now().isoformat(),
+                        'error': str(e),
+                        'type': type(e).__name__
+                    }, _is_internal_error=True)
+                except Exception:
+                    pass
+
+            now = time.time()
+            if now - last_error_flush >= 3600:
+                monitor.flush_error_queue()
+                last_error_flush = now
+
+            time.sleep(config.config['check_interval'])
+
+    except Exception as e:
+        logger.error(f"Fatal error: {str(e)}")
+        try:
+            monitor.send_error({
+                'timestamp': get_local_now().isoformat(),
+                'error': str(e),
+                'type': type(e).__name__
+            }, _is_internal_error=True)
+        except Exception:
+            pass
+        monitor.flush_error_queue()
+
+    finally:
+        lock.release()
+
+if __name__ == '__main__':
+    main()
