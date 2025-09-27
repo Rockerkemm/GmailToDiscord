@@ -415,8 +415,6 @@ def main():
     lock = ensure_single_instance()
     monitor.flush_error_queue()
     last_error_flush = time.time()
-    global config, message_cache
-
     config = Config()
     config.load_from_file()
     message_cache = MessageCache()
@@ -426,30 +424,33 @@ def main():
 
         while True:
             try:
-                # Fetch both incoming and outgoing messages newer than last_processed_ts
-                incoming_query = 'in:inbox -label:draft -category:promotions -category:social'
-                outgoing_query = 'in:sent -label:draft'
+                # Fetch all messages (inbox and sent) newer than last_processed_ts
+                queries = [
+                    'in:inbox -label:draft -category:promotions -category:social',
+                    'in:sent -label:draft'
+                ]
+                all_msgs = []
+                for query in queries:
+                    all_msgs.extend(fetch_messages(service, query, last_processed_ts))
 
-                incoming_msgs = fetch_messages(service, incoming_query, last_processed_ts)
-                outgoing_msgs = fetch_messages(service, outgoing_query, last_processed_ts)
-
-                all_msgs = incoming_msgs + outgoing_msgs
                 # Sort by datetime (oldest first)
                 all_msgs.sort(key=lambda m: m['datetime'])
 
                 for msg in all_msgs:
-                    message_type = 'incoming' if msg['type'] == 'in' else 'outgoing'
+                    # Determine type based on Gmail label
+                    if 'in:sent' in msg.get('type', ''):
+                        message_type = 'outgoing'
+                    else:
+                        message_type = 'incoming'
                     discord_payload = create_discord_message(
                         message_type, msg['subject'], msg['sender'], msg['recipient'], msg['date']
                     )
                     if send_to_discord(DISCORD_WEBHOOK_URL, discord_payload):
                         logger.info(f"Sent {message_type} message {msg['id']} to Discord")
                         last_processed_ts = msg['datetime']
+                        save_last_processed_timestamp(last_processed_ts)
                     else:
                         logger.warning(f"Failed to send {message_type} message {msg['id']} (rate limited?)")
-
-                if all_msgs:
-                    save_last_processed_timestamp(last_processed_ts)
 
             except Exception as e:
                 logger.error(f"Error in main loop: {str(e)}")
