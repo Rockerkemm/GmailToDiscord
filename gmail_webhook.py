@@ -61,8 +61,8 @@ def get_local_now():
 def format_datetime(date_str):
     try:
         dt = parsedate_to_datetime(date_str)
-        dt = dt.astimezone()  # Convert to local time
-        return dt.strftime("%d %B %Y - %H:%M")
+        # Do not convert to local time; keep original timezone from header
+        return dt.strftime("%d %B %Y - %H:%M (%Z)")
     except Exception:
         return date_str
 
@@ -279,38 +279,51 @@ def save_last_processed_ids(incoming_id=None, outgoing_id=None):
 
 def process_messages(service, query, last_id, message_type):
     try:
-        results = service.users().messages().list(
-            userId='me',
-            q=query,
-            maxResults=config.config['max_messages']
-        ).execute()
+        all_messages = []
+        page_token = None
+        found_last_id = False
+        newest_message_id = None
 
-        messages = results.get('messages', [])
-        if not messages:
-            logger.info(f'No {message_type} messages found.')
-            return last_id
+        while True:
+            results = service.users().messages().list(
+                userId='me',
+                q=query,
+                maxResults=config.config['max_messages'],
+                pageToken=page_token
+            ).execute()
 
-        # Gmail returns newest-first
-        newest_message_id = messages[0]['id']
+            messages = results.get('messages', [])
+            if not messages:
+                break
 
-        if last_id:
-            #collect only messages newer than last_id
-            new_messages = []
+            if not newest_message_id:
+                newest_message_id = messages[0]['id']
+
             for message in messages:
-                if message['id'] == last_id:
+                if last_id and message['id'] == last_id:
+                    found_last_id = True
                     break
-                new_messages.append(message)
-            # Reverse so they’re sent oldest → newest
-            new_messages = list(reversed(new_messages))
-        else:
-            #First run, only send the newest message
-            new_messages = [messages[0]]
+                all_messages.append(message)
 
-        if not new_messages:
+            if found_last_id or not results.get('nextPageToken'):
+                break
+            page_token = results['nextPageToken']
+
+        # On first run, only send the newest message
+        if not last_id:
+            if all_messages:
+                all_messages = [all_messages[0]]
+            elif newest_message_id:
+                all_messages = [{'id': newest_message_id}]
+
+        # Reverse so they’re sent oldest → newest
+        all_messages = list(reversed(all_messages))
+
+        if not all_messages:
             logger.info(f"No new {message_type} messages to process.")
             return last_id or newest_message_id
 
-        for message in new_messages:
+        for message in all_messages:
             try:
                 msg = service.users().messages().get(
                     userId='me',
