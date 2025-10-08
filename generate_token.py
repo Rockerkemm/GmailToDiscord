@@ -6,7 +6,7 @@ from google.auth.transport.requests import Request
 
 # Configuration - update these paths as needed
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-CREDENTIALS_FILE = "credentials.json"  # Download this from Google Cloud Console
+CREDENTIALS_FILE = "client_secret.json"  # Download this from Google Cloud Console
 TOKEN_FILE = "token.json"  # This will be generated
 
 def generate_oauth_token():
@@ -22,7 +22,7 @@ def generate_oauth_token():
         print("2. Select your project")
         print("3. Navigate to 'APIs & Services' > 'Credentials'")
         print("4. Create OAuth 2.0 Client ID for Desktop Application")
-        print("5. Download the JSON file and name it 'credentials.json'")
+        print("5. Download the JSON file and name it 'client_secret.json'")
         return False
     
     # Ensure data directory exists
@@ -73,7 +73,7 @@ def verify_credentials_file():
             data = json.load(f)
             
         if 'installed' not in data:
-            print("Error: credentials.json should contain 'installed' section")
+            print("Error: client_secret.json should contain 'installed' section")
             print("Make sure you downloaded OAuth credentials for Desktop Application")
             return False
             
@@ -81,17 +81,17 @@ def verify_credentials_file():
         missing_fields = [field for field in required_fields if field not in data['installed']]
         
         if missing_fields:
-            print(f"Error: Missing required fields in credentials.json: {missing_fields}")
+            print(f"Error: Missing required fields in client_secret.json: {missing_fields}")
             return False
             
-        print("credentials.json is valid")
+        print("client_secret.json is valid")
         return True
         
     except json.JSONDecodeError:
-        print("Error: credentials.json is not valid JSON")
+        print("Error: client_secret.json is not valid JSON")
         return False
     except Exception as e:
-        print(f"Error reading credentials.json: {e}")
+        print(f"Error reading client_secret.json: {e}")
         return False
 
 if __name__ == "__main__":
@@ -103,4 +103,4 @@ if __name__ == "__main__":
     if verify_credentials_file():
         generate_oauth_token()
     else:
-        print("\n Please fix the credentials.json file and try again.")
+        print("\n Please fix the client_secret.json file and try again.")

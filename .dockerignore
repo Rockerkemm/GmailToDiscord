@@ -6,6 +6,6 @@ Dockerfile
 docker-compose.yaml
 README.md
 LICENSE.md
-credentials.json
+client_secret.json
 generate_token.py
 token.json

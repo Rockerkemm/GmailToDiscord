@@ -7,7 +7,7 @@ services:
       # Mount persistent data directory
       - ./data:/app/data
       # Mount OAuth credentials
-      - ./credentials.json:/app/credentials.json:ro
+      - ./tokens.json:/app/tokens.json
     environment:
       # Enable interactive mode for initial OAuth setup
       - DISPLAY=${DISPLAY:-}

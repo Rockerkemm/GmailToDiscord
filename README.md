@@ -28,7 +28,7 @@ This application monitors Gmail for new emails and sends notifications to Discor
 - Click "+ CREATE CREDENTIALS" > "OAuth client ID"
 - Choose "Desktop application"
 - Click "Create"
-- Download the JSON file and rename it to `credentials.json`
+- Download the JSON file and rename it to `client_secret.json`
 
 ### 2. Discord Webhook Setup
 
@@ -45,7 +45,7 @@ The OAuth token must be generated on a local machine with a browser before deplo
 
 **On your local machine:**
 
-1. Copy [`credentials.json`](credentials.json) to your local machine
+1. Copy [`client_secret.json`](client_secret.json) to your local machine
 2. Install Python dependencies:
    ```bash
    pip install google-auth google-auth-oauthlib google-api-python-client
@@ -116,7 +116,7 @@ GmailToDiscord/
 ├── requirements.txt         # Python dependencies
 ├── .env                     # Environment variables(rename .env.example)
 ├── .env.example             # Environment template
-├── credentials.json         # OAuth 2.0 credentials (download from Google)
+├── client_secret.json       # OAuth 2.0 credentials (download from Google)
 ├── data/                    # Persistent data directory
 │   ├── token.json           # OAuth token (generated locally, copied here)
 │   ├── last_processed.json  # Application state
@@ -187,8 +187,8 @@ python generate_token.py
 
 **Solution:**
 ```bash
-# Ensure credentials.json exists
-ls -la credentials.json
+# Ensure client_secret.json exists
+ls -la client_secret.json
 
 # If missing, download from Google Cloud Console
 ```
@@ -203,7 +203,7 @@ ls -la credentials.json
 docker-compose logs gmail-webhook
 
 # Ensure all required files are present
-ls -la credentials.json data/token.json .env
+ls -la client_secret.json data/token.json .env
 ```
 
 ## Development
@@ -217,7 +217,7 @@ You can run the application locally for testing:
 pip install -r requirements.txt
 
 # Ensure you have the required files
-ls -la credentials.json data/token.json .env
+ls -la client_secret.json data/token.json .env
 
 # Run the application
 python gmail_webhook.py
@@ -225,8 +225,4 @@ python gmail_webhook.py
 
 ### Token Generation Scripts
 
-The project includes two token generation scripts:
-- [`generate_token.py`](generate_token.py) - Basic token generator
-- [`TokenGeneration.py`](TokenGeneration.py) - Enhanced token generator with better UI
-
-Both scripts perform the same function. Use whichever you prefer.
+The project includes [`generate_token.py`](generate_token.py) for generating OAuth tokens. Run this script on a local machine with browser access before deploying to your server.
