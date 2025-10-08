@@ -1,5 +1,4 @@
 .env
-token.json
 .dockerignore
 .git
 .github
@@ -7,4 +6,7 @@ Dockerfile
 docker-compose.yaml
 README.md
 LICENSE.md
-
+credentials.json
+generate_token.py
+token.json
+TokenGeneration.py

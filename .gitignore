@@ -2,3 +2,4 @@
 !.env.example
 token.json
 last_processed.json
+credentials.json

@@ -1,17 +1,28 @@
-# Use an official Python runtime as a base image
-FROM python:3.11.2-slim
+FROM python:3.11-slim
 
-# Set the working directory inside the container
-WORKDIR /GMAILTODISCORD
+# Set working directory
+WORKDIR /app
 
-# Copy the current directory contents into the container
-COPY . /GMAILTODISCORD
+# Install system dependencies for GUI applications (needed for OAuth browser flow)
+RUN apt-get update && apt-get install -y \
+    gcc \
+    xvfb \
+    x11-utils \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install the dependencies
+# Copy requirements first (for better caching)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Clean up requirements file after installation
-RUN rm requirements.txt
+# Copy application files
+COPY gmail_webhook.py .
+COPY .env .
 
-# Command to run the application
+# Create directories for persistent data
+RUN mkdir -p /app/data
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+
+# Run the application
 CMD ["python", "gmail_webhook.py"]

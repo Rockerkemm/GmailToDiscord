@@ -1,12 +1,16 @@
 services:
-  gmailtodiscord:
-    container_name: gmail-notifier
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      DISCORD_WEBHOOK_URL:
-      DISCORD_MONITOR_WEBHOOK_URL:
+  gmail-webhook:
+    build: .
+    container_name: gmail-to-discord
+    restart: unless-stopped
     volumes:
-      - ./token.json:/GMAILTODISCORD/token.json
-      - ./last_processed.json:/GMAILTODISCORD/last_processed.json
+      # Mount persistent data directory
+      - ./data:/app/data
+      # Mount OAuth credentials
+      - ./credentials.json:/app/credentials.json:ro
+    environment:
+      # Enable interactive mode for initial OAuth setup
+      - DISPLAY=${DISPLAY:-}
+    stdin_open: true
+    tty: true
+
