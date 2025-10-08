@@ -21,6 +21,10 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")  # Get from .env file
 TOKEN_FILE = os.getenv("TOKEN_FILE", "data/token.json")  # Path to store the token
 
+# Discord bot profile pictures
+DISCORD_AVATAR_URL = os.getenv("DISCORD_AVATAR_URL")
+DISCORD_ERROR_AVATAR_URL = os.getenv("DISCORD_ERROR_AVATAR_URL")
+
 # Use data directory for persistent files
 DATA_DIR = "/app/data" if os.path.exists("/app/data") else "data"
 # Ensure data directory exists
@@ -41,12 +45,14 @@ DISCORD_FORMATTING = {
         'color': 3447003,  # Blue
         'username': 'Nue jmael :)',
         'title_prefix': 'New Email Received',
+        'avatar_url': DISCORD_AVATAR_URL
     },
     'outgoing': {
         'emoji': '✈️',
         'color': 4437377,  # Green
         'username': 'Nue jmael :)',
         'title_prefix': 'New Email Sent',
+        'avatar_url': DISCORD_AVATAR_URL
     }
 }
 
@@ -273,7 +279,7 @@ def send_to_discord(message_data, message_type='incoming'):
         }
         
         # Add custom avatar if specified
-        if 'avatar_url' in config:
+        if config.get('avatar_url'):
             payload['avatar_url'] = config['avatar_url']
         
         # Apply rate limiting before making request
@@ -333,6 +339,10 @@ def send_error_to_discord(error_message):
             "username": "Gmail Error Bot",
             "embeds": [embed]
         }
+        
+        # Add custom error avatar if specified
+        if DISCORD_ERROR_AVATAR_URL:
+            payload['avatar_url'] = DISCORD_ERROR_AVATAR_URL
         
         # Apply rate limiting before making request
         discord_rate_limiter.wait_for_rate_limit()

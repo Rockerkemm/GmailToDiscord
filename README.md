@@ -77,6 +77,10 @@ DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
 
 # OAuth 2.0 configuration
 TOKEN_FILE=token.json
+
+# Discord bot profile pictures (optional)
+DISCORD_AVATAR_URL=https://example.com/your-bot-avatar.png
+DISCORD_ERROR_AVATAR_URL=https://example.com/your-error-bot-avatar.png
 ```
 
 ### 5. Docker Deployment
@@ -137,7 +141,20 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_url_here
 
 # OAuth 2.0 configuration
 TOKEN_FILE=token.json
+
+# Discord bot profile pictures (optional)
+DISCORD_AVATAR_URL=https://example.com/your-bot-avatar.png
+DISCORD_ERROR_AVATAR_URL=https://example.com/your-error-bot-avatar.png
 ```
+
+### Discord Bot Customization
+
+You can customize the Discord bot appearance by setting profile picture URLs:
+
+- `DISCORD_AVATAR_URL` - Profile picture for email notifications (incoming/outgoing emails)
+- `DISCORD_ERROR_AVATAR_URL` - Profile picture for error notifications
+
+These URLs should point to publicly accessible image files (PNG, JPG, GIF). If not specified, Discord will use the default webhook avatar.
 
 ### Gmail API Scopes
 
@@ -204,6 +221,19 @@ docker-compose logs gmail-webhook
 
 # Ensure all required files are present
 ls -la client_secret.json data/token.json .env
+```
+
+### Discord Avatar Issues
+
+**Problem:** Bot avatars not displaying correctly
+
+**Solution:**
+```bash
+# Ensure avatar URLs are publicly accessible
+curl -I https://your-avatar-url.png
+
+# Check if URLs are valid in your .env file
+grep DISCORD_.*AVATAR_URL .env
 ```
 
 ## Development
