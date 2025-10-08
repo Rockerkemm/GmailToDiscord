@@ -6,11 +6,7 @@ services:
     volumes:
       # Mount persistent data directory
       - ./data:/app/data
-      # Mount OAuth credentials
-      - ./tokens.json:/app/tokens.json
-    environment:
-      # Enable interactive mode for initial OAuth setup
-      - DISPLAY=${DISPLAY:-}
+
     stdin_open: true
     tty: true
 
