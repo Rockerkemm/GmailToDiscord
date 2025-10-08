@@ -566,7 +566,7 @@ def main():
                         print(f"Processing the most recent email for first-time setup")
                         is_first_run = False  # Mark as no longer first run
                     else:
-                        print(f"Found {len(messages)} new messages to process")
+                        print(f"Checking {len(messages)} messages for new content...")
                     
                     # Process messages chronologically (oldest first)
                     processed_messages = []
@@ -585,6 +585,12 @@ def main():
                             if message_data['internal_date'] > latest_internal_date:
                                 latest_internal_date = message_data['internal_date']
                                 latest_message_id = message_data['message_id']
+                    
+                    # Now print accurate count of messages that will be processed
+                    if processed_messages:
+                        print(f"Found {len(processed_messages)} new messages to process")
+                    else:
+                        print("No new messages to process (all messages were filtered out)")
                     
                     # Send to Discord in chronological order
                     for message_data, message_type in processed_messages:
