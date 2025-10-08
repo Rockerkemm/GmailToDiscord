@@ -27,7 +27,6 @@ This application monitors Gmail for new emails and sends notifications to Discor
    - Go to "APIs & Services" > "Credentials"
    - Click "+ CREATE CREDENTIALS" > "OAuth client ID"
    - Choose "Desktop application"
-   - Name: `Gmail Discord Webhook Desktop`
    - Click "Create"
    - Download the JSON file and rename it to `credentials.json`
 
@@ -44,23 +43,27 @@ This application monitors Gmail for new emails and sends notifications to Discor
 
 1. **Clone/Download the project files to your server**
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/Rockerkemm/GmailToDiscord.git
    cd GmailToDiscord
    ```
 
-2. **Copy OAuth credentials to server**
+2. **Get token.json**
    ```bash
-   # Copy the downloaded credentials.json to your server
-   scp credentials.json user@server:/path/to/GmailToDiscord/
+   # Copy the downloaded credentials.json to a machine that has a web browser
+   Install dependencies on local machine
+      pip install google-auth google-auth-oauthlib google-api-python-client
+   Run generate_token.py
+   Follow Auth flow to get the token file
+   rename token file to token.json
+   copy token.json to server
    ```
 
 3. **Create environment file**
    ```bash
-   # Copy the example file
-   cp .env.example .env
+   # rename the .env.example file to .env
+   mv .env.example .env
    
    # Edit the .env file with your values
-   nano .env
    ```
 
 4. **Configure environment variables**
@@ -70,85 +73,8 @@ This application monitors Gmail for new emails and sends notifications to Discor
    DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
    
    # OAuth 2.0 configuration
-   CREDENTIALS_FILE=credentials.json
    TOKEN_FILE=token.json
    ```
-
-5. **Create required directories**
-   ```bash
-   mkdir -p data
-   ```
-
-### Step 4: OAuth Token Generation (Local Machine)
-
-Since the server is headless, you need to generate the OAuth token on your local machine:
-
-
-1. **Copy files to your local machine**
-   ```bash
-   # Copy credentials.json from server to local machine
-   scp user@server:/path/to/GmailToDiscord/credentials.json ./
-   
-   # Copy the token generator script (if available)
-   scp user@server:/path/to/GmailToDiscord/generate_token.py ./
-   ```
-
-2. **Install dependencies on local machine**
-   ```bash
-   pip install google-auth google-auth-oauthlib google-api-python-client
-   ```
-
-3. **Generate OAuth token**
-   ```bash
-   python generate_token.py
-   ```
-   
-   This will:
-   - Open your browser for Gmail authentication
-   - Generate a `token.json` file
-   - Display instructions for copying to server
-
-4. **Copy token back to server**
-   ```bash
-   # Copy the generated token.json to server
-   scp token.json user@server:/path/to/GmailToDiscord/data/
-   ```
-
-2. **Install dependencies on your local machine**
-   ```bash
-   pip install google-auth google-auth-oauthlib google-api-python-client
-   ```
-
-3. **Copy credentials.json to your local machine**
-   ```bash
-   # Copy the credentials.json file from server to local machine
-   scp user@server:/path/to/GmailToDiscord/credentials.json ./
-   ```
-
-4. **Run the token generation script**
-   ```bash
-   python generate_token.py
-   ```
-   
-   This will:
-   - Verify your credentials.json file is valid
-   - Open your browser for Gmail authentication
-   - Generate a `token.json` file
-   - Display detailed instructions for copying to server
-
-5. **Copy the generated token to your server**
-   ```bash
-   # Copy the generated token.json to server
-   scp token.json user@server:/path/to/GmailToDiscord/data/token.json
-   ```
-
-#### Important Notes for Token Generation
-
-- **Browser Required**: The token generation must be done on a machine with browser access
-- **Gmail Account**: Sign in with the Gmail account you want to monitor
-- **Token Security**: The `token.json` file contains access tokens - keep it secure
-- **Token Expiry**: Tokens refresh automatically, but if refresh fails, regenerate the token
-- **One-Time Setup**: After initial setup, the server runs headlessly
 
 ### Step 5: Docker Deployment
 
@@ -169,11 +95,11 @@ Since the server is headless, you need to generate the OAuth token on your local
 
 4. **You should see**:
    ```
-   🚀 Starting Gmail to Discord webhook with OAuth 2.0...
-   🔐 Loaded existing OAuth credentials
-   🔐 OAuth 2.0 authentication successful
-   🎉 First time running! Will process the most recent email.
-   🔄 Starting continuous monitoring (checking every 10 seconds)
+   Starting Gmail to Discord webhook with OAuth 2.0...
+   Loaded existing OAuth credentials
+   OAuth 2.0 authentication successful
+   First time running! Will process the most recent email.
+   Starting continuous monitoring (checking every 10 seconds)
    ```
 
 ## 📁 Project Structure
@@ -203,7 +129,6 @@ GmailToDiscord/
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_url_here
 
 # OAuth 2.0 configuration
-CREDENTIALS_FILE=credentials.json
 TOKEN_FILE=token.json
 ```
 
