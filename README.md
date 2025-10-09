@@ -66,7 +66,7 @@ git clone https://github.com/Rockerkemm/GmailToDiscord.git
 cd GmailToDiscord
 ```
 #### OR
-```
+```bash
 # Pull Docker Package
 docker pull ghcr.io/rockerkemm/gmailtodiscord:sha-a0bf75c3c16c40bdbda24811cdf848b92a02175d
 ```
@@ -233,6 +233,7 @@ python gmail_webhook.py
 
 
 The project includes [`generate_token.py`](generate_token.py) for generating OAuth tokens. Run this script on a local machine with browser access before deploying to your server.
+
 
 
 
