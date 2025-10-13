@@ -65,7 +65,7 @@ The OAuth token must be generated on a local machine with a browser before deplo
 mkdir GmailToDiscord
 cd GmailToDiscord
 
-# Download the docker-compose.yml file directly (You might have to sudo)
+# Download the docker-compose.yml file directly
 wget https://raw.githubusercontent.com/Rockerkemm/GmailToDiscord/main/docker-compose.yml
 ```
 
