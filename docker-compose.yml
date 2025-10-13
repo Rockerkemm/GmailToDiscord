@@ -9,10 +9,9 @@ services:
       - ./token.json:/app/token.json
     environment:
       # Discord webhook URL
-      - DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/your-webhook-url"
-      
+      DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/your-webhook-url"
       # OAuth 2.0 configuration
-      - TOKEN_FILE: "token.json"
+      TOKEN_FILE: "token.json"
 
     stdin_open: true
     tty: true
