@@ -142,32 +142,6 @@ The application automatically filters out:
 The application is distributed as a Docker image hosted on GitHub Container Registry:
 - **Latest stable**: `ghcr.io/rockerkemm/gmailtodiscord:latest`
 
-### Docker Issues
-
-**Problem:** Container fails to start
-
-**Solution:**
-```bash
-# Check logs for specific error messages
-docker-compose logs gmail-webhook
-
-# Ensure all required files are present
-ls -la token.json data/
-
-# Verify the container can access the mounted files
-docker-compose exec gmail-webhook ls -la /app/
-```
-
-**Problem:** "No such file or directory" for token.json
-
-**Solution:**
-```bash
-# Ensure token.json is in the project root directory (same level as docker-compose.yml)
-ls -la token.json
-
-# The docker-compose.yml mounts ./token.json to /app/token.json inside the container
-```
-
 ### Token Generation Scripts
 
 The project includes [`generate_token.py`](generate_token.py) for generating OAuth tokens. Run this script on a local machine with browser access before deploying to your server.
