@@ -4,15 +4,14 @@ services:
     container_name: gmail-to-discord
     restart: unless-stopped
     volumes:
-      # Mount data folder and token.json
+      # Mount data folder and token.json to working directory where app expects it
       - ./data:/app/data
       - ./token.json:/app/token.json
     environment:
       # Discord webhook URL
       DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/your-webhook-url"
-      # OAuth 2.0 configuration
-      TOKEN_FILE: "token.json"
-
+      # Set token file path to mounted location
+      TOKEN_FILE: "/app/token.json"
     stdin_open: true
     tty: true
 
