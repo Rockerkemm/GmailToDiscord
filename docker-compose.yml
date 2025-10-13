@@ -1,11 +1,18 @@
 services:
   gmail-webhook:
-    build: .
+    image: ghcr.io/rockerkemm/gmailtodiscord:latest
     container_name: gmail-to-discord
     restart: unless-stopped
     volumes:
-      # Mount persistent data directory
+      # Mount data folder and token.json
       - ./data:/app/data
+      - ./token.json:/app/token.json
+    environment:
+      # Discord webhook URL
+      - DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/your-webhook-url"
+      
+      # OAuth 2.0 configuration
+      - TOKEN_FILE: "token.json"
 
     stdin_open: true
     tty: true

@@ -45,7 +45,7 @@ The OAuth token must be generated on a local machine with a browser before deplo
 
 **On your local machine:**
 
-1. Copy [`client_secret.json`](client_secret.json) to your local machine
+1. Download [`generate_token.py`](generate_token.py) and place your [`client_secret.json`](client_secret.json) in the same directory
 2. Install Python dependencies:
    ```bash
    pip install google-auth google-auth-oauthlib google-api-python-client
@@ -55,39 +55,52 @@ The OAuth token must be generated on a local machine with a browser before deplo
    python generate_token.py
    ```
 4. Follow the authentication flow in your browser
-5. Copy the generated `token.json` to your server at `data/token.json`
+5. Copy the generated `token.json` to your server
 
 ### 4. Server Configuration
 
-**Clone the project or pull the package:**
+**Download the project files:**
 ```bash
-# Clone
+# Clone the repository to get the docker-compose.yml and configuration files
 git clone https://github.com/Rockerkemm/GmailToDiscord.git
 cd GmailToDiscord
 ```
-#### OR
-```bash
-# Pull Docker Package
-docker pull ghcr.io/rockerkemm/gmailtodiscord:sha-a0bf75c3c16c40bdbda24811cdf848b92a02175d
+
+**Configure the Docker Compose file:**
+Edit the [`docker-compose.yml`](docker-compose.yml) file and update the environment variables:
+
+```yaml
+services:
+  gmail-webhook:
+    image: ghcr.io/rockerkemm/gmailtodiscord:latest
+    container_name: gmail-to-discord
+    restart: unless-stopped
+    volumes:
+      # Mount data folder and token.json
+      - ./data:/app/data
+      - ./token.json:/app/token.json
+    environment:
+      # Discord webhook URL - REPLACE WITH YOUR WEBHOOK URL
+      DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE"
+      
+      # OAuth 2.0 configuration
+      TOKEN_FILE: "token.json"
+
+    stdin_open: true
+    tty: true
 ```
 
-**Configure environment variables:**
+**Copy token.json files to the right place:**
+Transfer the token file to your server:
 ```bash
-cp .env.example .env
-```
-
-Edit the [.env](.env) file:
-```env
-# Discord webhook URL
-DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
-
-# OAuth 2.0 configuration
-TOKEN_FILE=token.json
+scp token.json username@to_host:/pathToDirectory/
 ```
 
 ### 5. Docker Deployment
 
-**Build and start the container:**
+The [`docker-compose.yml`](docker-compose.yml) file is configured to automatically pull the latest Docker image from GitHub Container Registry.
+
+**Start the container:**
 ```bash
 docker-compose up -d
 ```
@@ -111,39 +124,24 @@ First time running! Will process the most recent email.
 Starting continuous monitoring (checking every 10 seconds)
 ```
 
-## Project Structure
-
-```
-GmailToDiscord/
-├── gmail_webhook.py         # Main application
-├── generate_token.py        # OAuth token generator (run locally)
-├── Dockerfile               # Docker configuration
-├── docker-compose.yml       # Docker Compose configuration
-├── requirements.txt         # Python dependencies
-├── .env                     # Environment variables(rename .env.example)
-├── .env.example             # Environment template
-├── client_secret.json       # OAuth 2.0 credentials (download from Google)
-├── data/                    # Persistent data directory
-│   ├── token.json           # OAuth token (generated locally, copied here)
-│   ├── last_processed.json  # Application state
-│   └── error_queue.json     # Error queue for retry logic
-└── .github/
-    └── workflows/
-        └── build-container.yaml  # CI/CD workflow
-```
-
 ## Configuration
 
 ### Environment Variables
 
-The [.env](.env) file contains:
-```env
-# Discord webhook URL
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_url_here
+Environment variables are configured directly in the [`docker-compose.yml`](docker-compose.yml) file:
 
-# OAuth 2.0 configuration
-TOKEN_FILE=token.json
+```yaml
+environment:
+  # Discord webhook URL - Replace with your actual webhook URL
+  DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/your_webhook_url_here"
+  
+  # OAuth 2.0 configuration
+  TOKEN_FILE: "token.json"
 ```
+
+**Required Configuration:**
+- Replace `YOUR_WEBHOOK_URL_HERE` with your actual Discord webhook URL
+- Ensure `token.json` exists in the project directory
 
 ### Gmail API Scopes
 
@@ -156,48 +154,14 @@ The application automatically filters out:
 - Draft messages (`DRAFT` label)
 - Scheduled messages (`SCHEDULED` label)
 
-## Troubleshooting
+## Docker Image
 
-### OAuth Token Issues
+The application is distributed as a Docker image hosted on GitHub Container Registry:
+- **Latest stable**: `ghcr.io/rockerkemm/gmailtodiscord:latest`
 
-**Problem:** "OAuth token required - please generate token.json on a local machine"
+The [`docker-compose.yml`](docker-compose.yml) automatically pulls the latest image, so you don't need to build anything locally.
 
-**Solution:**
-```bash
-# Ensure token.json exists in the data directory
-ls -la data/token.json
 
-# If missing, follow the OAuth Token Generation steps above
-```
-
-**Problem:** "Failed to load existing credentials"
-
-**Solution:**
-```bash
-# Verify token.json is valid JSON
-cat data/token.json | python -m json.tool
-```
-
-**Problem:** "Failed to refresh credentials"
-
-**Solution:**
-```bash
-# Regenerate the token on your local machine
-# Run generate_token.py again and copy the new token.json to the server
-python generate_token.py
-```
-
-### Authentication Flow Issues
-
-**Problem:** "OAuth credentials file not found"
-
-**Solution:**
-```bash
-# Ensure client_secret.json exists
-ls -la client_secret.json
-
-# If missing, download from Google Cloud Console
-```
 
 ### Docker Issues
 
@@ -209,34 +173,23 @@ ls -la client_secret.json
 docker-compose logs gmail-webhook
 
 # Ensure all required files are present
-ls -la client_secret.json data/token.json .env
+ls -la token.json data/
+
+# Verify the container can access the mounted files
+docker-compose exec gmail-webhook ls -la /app/
 ```
 
-## Development
+**Problem:** "No such file or directory" for token.json
 
-### Running Locally
-
-You can run the application locally for testing:
-
+**Solution:**
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Ensure token.json is in the project root directory (same level as docker-compose.yml)
+ls -la token.json
 
-# Ensure you have the required files
-ls -la client_secret.json data/token.json .env
-
-# Run the application
-python gmail_webhook.py
+# The docker-compose.yml mounts ./token.json to /app/token.json inside the container
 ```
+
 
 ### Token Generation Scripts
 
-
 The project includes [`generate_token.py`](generate_token.py) for generating OAuth tokens. Run this script on a local machine with browser access before deploying to your server.
-
-
-
-
-
-
-
