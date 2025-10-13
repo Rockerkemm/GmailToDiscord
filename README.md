@@ -59,7 +59,7 @@ The OAuth token must be generated on a local machine with a browser before deplo
 
 ### 4. Server Configuration
 
-**Option A: Download docker-compose.yml only (Recommended)**
+**Download docker-compose.yml**
 ```bash
 # Create project directory
 mkdir GmailToDiscord
@@ -142,7 +142,6 @@ The application automatically filters out:
 The application is distributed as a Docker image hosted on GitHub Container Registry:
 - **Latest stable**: `ghcr.io/rockerkemm/gmailtodiscord:latest`
 
-
 ### Docker Issues
 
 **Problem:** Container fails to start
@@ -168,7 +167,6 @@ ls -la token.json
 
 # The docker-compose.yml mounts ./token.json to /app/token.json inside the container
 ```
-
 
 ### Token Generation Scripts
 
