@@ -7,18 +7,14 @@ import threading
 import requests
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
-from dotenv import load_dotenv
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Load environment variables
-load_dotenv()
-
 # Configuration
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")  # Get from .env file
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")  # Get from environment variables
 TOKEN_PATH = os.getenv("TOKEN_FILE", "token.json")  # Path to store the token
 
 # Use data directory for persistent files
