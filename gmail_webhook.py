@@ -22,7 +22,7 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")  # Get from .env file
 TOKEN_PATH = os.getenv("TOKEN_FILE", "token.json")  # Path to store the token
 
 # Use data directory for persistent files
-DATA_DIR = "/app/data"
+DATA_DIR = "/app/data/"
 # Ensure data directory exists
 os.makedirs(DATA_DIR, exist_ok=True)
 STATE_FILE = os.path.join(DATA_DIR, "last_processed.json")
