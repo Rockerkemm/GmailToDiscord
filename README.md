@@ -65,8 +65,8 @@ The OAuth token must be generated on a local machine with a browser before deplo
 mkdir GmailToDiscord
 cd GmailToDiscord
 
-# Download the docker-compose.yml file directly
-wget https://github.com/Rockerkemm/GmailToDiscord/blob/main/docker-compose.yml
+# Download the docker-compose.yml file directly (You might have to sudo)
+wget https://raw.githubusercontent.com/Rockerkemm/GmailToDiscord/main/docker-compose.yml
 ```
 
 **Configure the Docker Compose file:**
@@ -146,3 +146,4 @@ The application is distributed as a Docker image hosted on GitHub Container Regi
 
 
 The project includes [`generate_token.py`](generate_token.py) for generating OAuth tokens. Run this script on a local machine with browser access before deploying to your server.
+
