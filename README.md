@@ -59,15 +59,18 @@ The OAuth token must be generated on a local machine with a browser before deplo
 
 ### 4. Server Configuration
 
-**Download the project files:**
+**Option A: Download docker-compose.yml only (Recommended)**
 ```bash
-# Clone the repository to get the docker-compose.yml and configuration files
-git clone https://github.com/Rockerkemm/GmailToDiscord.git
+# Create project directory
+mkdir GmailToDiscord
 cd GmailToDiscord
+
+# Download the docker-compose.yml file directly
+wget https://raw.githubusercontent.com/Rockerkemm/GmailToDiscord/main/docker-compose.yml
 ```
 
 **Configure the Docker Compose file:**
-Edit the [`docker-compose.yml`](docker-compose.yml) file and update the environment variables:
+Edit the [`docker-compose.yml`](docker-compose.yml) file and update DISCORD_WEBHOOK_URL:
 
 ```yaml
 services:
@@ -90,8 +93,7 @@ services:
     tty: true
 ```
 
-**Copy token.json files to the right place:**
-Transfer the token file to your server:
+**Copy token.json to the project directory:**
 ```bash
 scp token.json username@to_host:/pathToDirectory/
 ```
@@ -124,25 +126,6 @@ First time running! Will process the most recent email.
 Starting continuous monitoring (checking every 10 seconds)
 ```
 
-## Configuration
-
-### Environment Variables
-
-Environment variables are configured directly in the [`docker-compose.yml`](docker-compose.yml) file:
-
-```yaml
-environment:
-  # Discord webhook URL - Replace with your actual webhook URL
-  DISCORD_WEBHOOK_URL: "https://discord.com/api/webhooks/your_webhook_url_here"
-  
-  # OAuth 2.0 configuration
-  TOKEN_FILE: "token.json"
-```
-
-**Required Configuration:**
-- Replace `YOUR_WEBHOOK_URL_HERE` with your actual Discord webhook URL
-- Ensure `token.json` exists in the project directory
-
 ### Gmail API Scopes
 
 The application uses minimal required permissions:
@@ -158,9 +141,6 @@ The application automatically filters out:
 
 The application is distributed as a Docker image hosted on GitHub Container Registry:
 - **Latest stable**: `ghcr.io/rockerkemm/gmailtodiscord:latest`
-
-The [`docker-compose.yml`](docker-compose.yml) automatically pulls the latest image, so you don't need to build anything locally.
-
 
 
 ### Docker Issues
