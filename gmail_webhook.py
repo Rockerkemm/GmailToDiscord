@@ -510,8 +510,20 @@ def process_message(service, message_id):
         
         return message_data, message_type
         
+    except HttpError as e:
+        if e.resp.status == 404:
+            # Message has been deleted from Gmail, this is expected behavior
+            print(f"Message {message_id} was deleted from Gmail (404 error). Skipping...")
+            return None, None
+        else:
+            # Other HTTP errors should be reported
+            error_msg = f"HTTP error {e.resp.status} processing message {message_id}: {e}"
+            print(f"HTTP Error: {error_msg}")
+            send_error_to_discord(error_msg)
+            return None, None
     except Exception as e:
         error_msg = f"Failed to process message {message_id}: {e}"
+        print(f"General Error: {error_msg}")
         send_error_to_discord(error_msg)
         return None, None
 
